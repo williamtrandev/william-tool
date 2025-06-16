@@ -7,6 +7,7 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [threshold, setThreshold] = useState(2); // Default threshold is 2
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -56,11 +57,11 @@ function App() {
       });
       // Lọc ra các nhóm có >1 dòng và sắp xếp theo số lượng dòng từ nhiều đến ít
       const filteredGroups = Object.entries(groups)
-        .filter(([, rows]) => rows.length > 1)
+        .filter(([, rows]) => rows.length >= threshold)
         .sort(([, rowsA], [, rowsB]) => rowsB.length - rowsA.length);
 
       if (filteredGroups.length === 0) {
-        setMessage('Không có nhóm nào có nhiều hơn 1 dòng trùng ID card/Passport pick.');
+        setMessage(`Không có nhóm nào có từ ${threshold} dòng trùng ID card/Passport pick trở lên.`);
         setProcessing(false);
         return;
       }
@@ -78,6 +79,11 @@ function App() {
       const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_Passport_pick.xlsx');
       setMessage('Đã tách và tải file thành công!');
+      
+      // Reset file input để cho phép upload file mới
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (err) {
       console.log(err);
       setMessage('Có lỗi xảy ra khi xử lý file.');
@@ -199,6 +205,41 @@ function App() {
           lineHeight: '1.6'
         }}>
           <p>Ứng dụng sẽ tự động gom nhóm và tách các dòng có <b>ID card/Passport pick</b> trùng nhau thành các sheet riêng, sắp xếp theo số lượng dòng trùng từ nhiều đến ít.</p>
+          <div style={{ marginTop: '20px' }}>
+            <label htmlFor="threshold" style={{ marginRight: '10px' }}>Ngưỡng số lượng dòng trùng:</label>
+            <input
+              type="number"
+              id="threshold"
+              min="2"
+              value={threshold}
+              onBlur={(e) => {
+                const value = e.target.value;
+                if (value === '' || parseInt(value) < 2) {
+                  setThreshold(2);
+                } else {
+                  setThreshold(parseInt(value));
+                }
+              }}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === '') {
+                  setThreshold(2);
+                } else {
+                  const num = parseInt(value);
+                  if (!isNaN(num)) {
+                    setThreshold(num);
+                  }
+                }
+              }}
+              style={{
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #bdc3c7',
+                width: '80px',
+                fontSize: '16px'
+              }}
+            />
+          </div>
         </div>
       </div>
 
