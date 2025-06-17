@@ -38,11 +38,40 @@ function App() {
       const workbook = XLSX.read(data);
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      // Đọc thông tin phía trên (từ dòng 1 đến dòng 5)
-      const rawHeaderInfo = XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '' }).slice(0, 5);
-      const headerInfo = rawHeaderInfo.map(row => Array.isArray(row) ? row : [row]);
-      // Đọc bảng dữ liệu từ dòng 6
-      const json: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '', range: 5 });
+      
+      // Đọc toàn bộ sheet để tìm dòng đầu tiên có cột ID card/Passport pick
+      const allData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as string[][];
+      
+      // Tìm dòng đầu tiên có cột ID card/Passport pick
+      let startRow = 0;
+      let headerRow: string[] | null = null;
+      
+      for (let i = 0; i < allData.length; i++) {
+        const row = allData[i];
+        const idCardIndex = row.findIndex((cell: string) => 
+          cell && cell.toString().toLowerCase().includes('id card/passport pick')
+        );
+        
+        if (idCardIndex !== -1) {
+          startRow = i;
+          headerRow = row;
+          break;
+        }
+      }
+      
+      if (headerRow === null) {
+        setMessage('Không tìm thấy cột ID card/Passport pick trong file.');
+        setProcessing(false);
+        return;
+      }
+
+      // Đọc dữ liệu từ dòng tìm thấy
+      const json: any[] = XLSX.utils.sheet_to_json(worksheet, { 
+        defval: '', 
+        range: startRow,
+        header: headerRow as string[]
+      });
+
       if (!json.length) {
         setMessage('File không có dữ liệu.');
         setProcessing(false);
