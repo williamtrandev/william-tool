@@ -62,9 +62,13 @@ const ExcelMapper = () => {
       
       mappingData[sheetName] = {};
       jsonData.forEach(row => {
-        if (row.value && row.key) {
-          mappingData[sheetName][row.value] = row.key;
+        if (!row.value) {
+          row.value = '';
         }
+        if (!row.key) {
+          row.key = '';
+        }
+        mappingData[sheetName][row.value] = row.key;
       });
     });
 
@@ -73,14 +77,13 @@ const ExcelMapper = () => {
 
   // Hàm xử lý giá trị để áp dụng mapping nếu có
   const processValue = (value: any, column: string, mappingData: MappingData): any => {
-    // Nếu có mapping cho column này và giá trị tồn tại trong mapping
+    // Nếu có mapping cho column này và giá trị tồn tại trong mapping (kể cả rỗng)
     if (mappingData[column] && value !== null && value !== undefined) {
       const currentValue = value.toString();
-      if (mappingData[column][currentValue]) {
+      if (Object.prototype.hasOwnProperty.call(mappingData[column], currentValue)) {
         return mappingData[column][currentValue];
       }
     }
-    
     // Nếu không có mapping, giữ nguyên giá trị gốc (đã được xử lý bởi cellDates: true)
     return value;
   };
@@ -114,10 +117,33 @@ const ExcelMapper = () => {
       const processed = sourceData.map(row => {
         const newRow: ProcessedData = {};
 
+        // Tạo cột dob nếu đủ 3 cột, luôn ghi đè
+        const hasBirthday = row['birthday_day'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
         Object.keys(row).forEach(column => {
-          const originalValue = row[column];
-          newRow[column] = processValue(originalValue, column, mappingData);
+          let originalValue = row[column];
+          if (typeof originalValue === 'string') {
+            originalValue = originalValue.trim();
+          }
+          // Trim lần nữa sau mapping nếu kết quả là string
+          let mappedValue = processValue(originalValue, column, mappingData);
+          if (typeof mappedValue === 'string') {
+            mappedValue = mappedValue.trim();
+          }
+          newRow[column] = mappedValue;
         });
+        // Luôn thêm key dob cho mọi dòng
+        if (hasBirthday) {
+          const date = String(row['birthday_day']).trim().padStart(2, '0');
+          const month = String(row['birthday_month']).trim().padStart(2, '0');
+          const year = String(row['birthday_year']).trim();
+          if (date && month && year) {
+            newRow['dob'] = `${year}-${month}-${date}`;
+          } else {
+            newRow['dob'] = '';
+          }
+        } else {
+          newRow['dob'] = '';
+        }
 
         return newRow;
       });

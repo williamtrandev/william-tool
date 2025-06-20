@@ -81,9 +81,29 @@ function App() {
         return;
       }
 
+      // Xử lý trim và thêm cột dob nếu có đủ 3 cột, luôn ghi đè
+      const processedJson = json.map(row => {
+        const newRow: any = {};
+        const hasBirthday = row['birthday_date'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
+        Object.keys(row).forEach(key => {
+          let value = row[key];
+          if (typeof value === 'string') value = value.trim();
+          newRow[key] = value;
+        });
+        if (hasBirthday) {
+          const date = String(row['birthday_date']).trim().padStart(2, '0');
+          const month = String(row['birthday_month']).trim().padStart(2, '0');
+          const year = String(row['birthday_year']).trim();
+          if (date && month && year) {
+            newRow['dob'] = `${year}-${month}-${date}`;
+          }
+        }
+        return newRow;
+      });
+
       // Gom nhóm theo ID card/Passport pick
       const groups: Record<string, any[]> = {};
-      json.forEach(row => {
+      processedJson.forEach(row => {
         const key = row['ID card/Passport pick'];
         if (!groups[key]) groups[key] = [];
         groups[key].push(row);
