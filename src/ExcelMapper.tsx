@@ -272,7 +272,7 @@ const ExcelMapper = () => {
         </div>
 
         {/* Process Button */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 flex justify-center items-center">
           <button
             onClick={processData}
             disabled={!sourceFile || !mappingFile || isProcessing}
@@ -310,7 +310,7 @@ const ExcelMapper = () => {
               </h3>
               <button
                 onClick={downloadProcessedFile}
-                className="btn-secondary"
+                className="btn-secondary flex justify-center items-center"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Tải về
