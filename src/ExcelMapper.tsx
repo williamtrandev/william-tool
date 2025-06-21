@@ -276,7 +276,7 @@ const ExcelMapper = () => {
           <button
             onClick={processData}
             disabled={!sourceFile || !mappingFile || isProcessing}
-            className="btn-primary"
+            className="btn-primary flex justify-center items-center"
           >
             <Upload className="w-5 h-5 mr-2" />
             {isProcessing ? 'Đang xử lý...' : 'Xử lý dữ liệu'}
