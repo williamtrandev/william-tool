@@ -52,7 +52,7 @@ function App() {
       for (let i = 0; i < allData.length; i++) {
         const row = allData[i];
         const idCardIndex = row.findIndex((cell: string) => 
-          cell && cell.toString().toLowerCase().includes('id card/passport pick')
+          cell && cell.toString().toLowerCase().includes('id card pick')
         );
         
         if (idCardIndex !== -1) {
@@ -63,7 +63,7 @@ function App() {
       }
       
       if (headerRow === null) {
-        setMessage('Không tìm thấy cột ID card/Passport pick trong file.');
+        setMessage('Không tìm thấy cột ID Card Pick trong file.');
         setProcessing(false);
         return;
       }
