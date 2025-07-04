@@ -104,7 +104,7 @@ function App() {
       // Gom nhóm theo ID card/Passport pick
       const groups: Record<string, any[]> = {};
       processedJson.forEach(row => {
-        const key = row['ID card/Passport pick'];
+        const key = row['ID Card Pick'];
         if (!groups[key]) groups[key] = [];
         groups[key].push(row);
       });
@@ -115,7 +115,7 @@ function App() {
         .sort(([, rowsA], [, rowsB]) => rowsB.length - rowsA.length);
 
       if (filteredGroups.length === 0) {
-        setMessage(`Không có nhóm nào có từ ${threshold} dòng trùng ID card/Passport pick trở lên.`);
+        setMessage(`Không có nhóm nào có từ ${threshold} dòng trùng ID Card Pick trở lên.`);
         setProcessing(false);
         return;
       }
@@ -140,7 +140,7 @@ function App() {
       
       // Xuất file
       const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
-      saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_Passport_pick.xlsx');
+      saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_pick.xlsx');
       setMessage('Đã tách và tải file thành công!');
       
       // Reset file input để cho phép upload file mới
