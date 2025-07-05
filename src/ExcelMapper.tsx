@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Download, FileText, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 interface MappingData {
   [sheetName: string]: {
@@ -16,6 +17,11 @@ const ExcelMapper = () => {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [mappingFile, setMappingFile] = useState<File | null>(null);
   const [processedData, setProcessedData] = useState<ProcessedData[]>([]);
+  const [originalSourceData, setOriginalSourceData] = useState<ProcessedData[]>([]);
+  const [unmappedCells, setUnmappedCells] = useState<{row: number, col: number}[]>([]);
+  const [unmappedValues, setUnmappedValues] = useState<{[column: string]: string[]}>({});
+  const [showUnmappedRows, setShowUnmappedRows] = useState(false);
+  const [mappingData, setMappingData] = useState<MappingData>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -335,8 +341,15 @@ const ExcelMapper = () => {
         processedSourceData.push(rowObj);
       }
 
+      setOriginalSourceData(processedSourceData); // Lưu dữ liệu gốc vào state
+
       // Parse mapping file
       const mappingData = await parseMappingFile(mappingFile);
+      setMappingData(mappingData); // Lưu mappingData vào state
+
+      // Theo dõi các cell có dữ liệu không được map
+      const unmappedCellsData: {row: number, col: number}[] = [];
+      const unmappedValuesData: {[column: string]: string[]} = {};
 
       // Process data với logic mapping đơn giản
       const processed = processedSourceData.map((row, rowIndex) => {
@@ -350,8 +363,30 @@ const ExcelMapper = () => {
           if (typeof originalValue === 'string') {
             originalValue = originalValue.trim();
           }
-          // Trim lần nữa sau mapping nếu kết quả là string
-          let mappedValue = processValue(originalValue, column, mappingData);
+          
+          // Kiểm tra xem giá trị có được map không
+          let mappedValue = originalValue;
+          if (mappingData[column] && originalValue !== null && originalValue !== undefined && originalValue !== '') {
+            const currentValue = originalValue.toString();
+            if (Object.prototype.hasOwnProperty.call(mappingData[column], currentValue)) {
+              mappedValue = mappingData[column][currentValue];
+            } else {
+              // Giá trị không tồn tại trong mapping - chỉ thêm vào danh sách cell không được map
+              const colIndex = headers.indexOf(column);
+              if (colIndex >= 0) {
+                console.log(`Unmapped cell: Row ${rowIndex + 2}, Col ${colIndex + 1}, Column: ${column}, Value: "${originalValue}"`);
+                unmappedCellsData.push({
+                  row: rowIndex + 2, // +2 vì Excel bắt đầu từ 1 và có header
+                  col: colIndex + 1  // +1 vì Excel bắt đầu từ 1
+                });
+                if (!unmappedValuesData[column]) {
+                  unmappedValuesData[column] = [];
+                }
+                unmappedValuesData[column].push(originalValue.toString());
+              }
+            }
+          }
+          
           if (typeof mappedValue === 'string') {
             mappedValue = mappedValue.trim();
           }
@@ -375,8 +410,27 @@ const ExcelMapper = () => {
         return newRow;
       });
 
+      setUnmappedCells(unmappedCellsData);
+      
+      // Loại bỏ các giá trị trùng lặp và sắp xếp
+      const uniqueUnmappedValues: {[column: string]: string[]} = {};
+      Object.keys(unmappedValuesData).forEach(column => {
+        uniqueUnmappedValues[column] = Array.from(new Set(unmappedValuesData[column])).sort();
+      });
+      
+      setUnmappedValues(uniqueUnmappedValues);
       setProcessedData(processed);
-      setMessage(`Dữ liệu đã được xử lý thành công! Sử dụng sheet "${selectedSheetName}" với ${processed.length} dòng dữ liệu.`);
+      
+      // Tính thống kê
+      const totalRows = processed.length;
+      const unmappedCellsCount = unmappedCellsData.length;
+      
+      let messageText = `Dữ liệu đã được xử lý thành công! Sử dụng sheet "${selectedSheetName}" với ${processed.length} dòng dữ liệu.`;
+      if (unmappedCellsCount > 0) {
+        messageText += ` Có ${unmappedCellsCount} cell có dữ liệu không được map.`;
+      }
+      
+      setMessage(messageText);
     } catch (error) {
       console.error('Processing error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Có lỗi xảy ra khi xử lý dữ liệu';
@@ -392,20 +446,190 @@ const ExcelMapper = () => {
       return;
     }
 
-    // Tạo worksheet với format phù hợp
-    const worksheet = XLSX.utils.json_to_sheet(processedData);
-    
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Processed Data');
+
+    // Thêm header
+    const headers = getTableColumns();
+    worksheet.addRow(headers);
+
+    // Thêm dữ liệu
+    processedData.forEach(row => {
+      const rowData = headers.map(header => row[header] || '');
+      worksheet.addRow(rowData);
+    });
+
     // Thiết lập column widths tự động
-    const columnWidths = getTableColumns().map(column => ({
-      wch: Math.max(column.length, 15)
+    worksheet.columns = headers.map(column => ({
+      header: column,
+      key: column,
+      width: Math.max(column.length, 15)
     }));
-    worksheet['!cols'] = columnWidths;
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Processed Data');
+    // Style cho header
+    const headerRow = worksheet.getRow(1);
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE6E6E6' } // Màu xám nhạt
+    };
+    headerRow.font = {
+      bold: true,
+      color: { argb: 'FF000000' } // Màu đen
+    };
+    headerRow.border = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
 
-    XLSX.writeFile(workbook, 'processed_data.xlsx');
-    setMessage('File đã được tải về thành công!');
+    // Style cho các cell có dữ liệu không tồn tại trong mapping (tô vàng từng cell)
+    console.log('Unmapped cells to style:', unmappedCells);
+    unmappedCells.forEach(({row, col}) => {
+      const cell = worksheet.getCell(row, col);
+      console.log(`Styling cell: Row ${row}, Col ${col}`);
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF99' } // Màu vàng nhạt
+      };
+      cell.font = {
+        color: { argb: 'FF996600' }, // Màu cam đậm cho text
+        italic: true
+      };
+    });
+
+    // Thêm comment cho header để giải thích màu vàng
+    if (unmappedCells.length > 0) {
+      const secondCell = worksheet.getCell(1, 2);
+      secondCell.note = `Cell có màu vàng là những cell có dữ liệu không tồn tại trong file mapping (${unmappedCells.length} cell)`;
+    }
+
+    // Thêm comment cho header để giải thích về giá trị unique
+    if (Object.keys(unmappedValues).length > 0) {
+      const thirdCell = worksheet.getCell(1, 3);
+      const totalUniqueValues = Object.values(unmappedValues).reduce((sum, values) => sum + values.length, 0);
+      thirdCell.note = `Có ${totalUniqueValues} giá trị unique cần được bổ sung vào file mapping để hoàn thiện quá trình mapping`;
+    }
+
+    // Thêm sheet thống kê nếu có cell không được map
+    if (unmappedCells.length > 0) {
+      const statsWorksheet = workbook.addWorksheet('Thống kê');
+      
+      // Thêm dữ liệu thống kê
+      statsWorksheet.addRow(['Thống kê', 'Giá trị']);
+      statsWorksheet.addRow(['Tổng số hàng', processedData.length]);
+      statsWorksheet.addRow(['Tổng số cột', getTableColumns().length]);
+      statsWorksheet.addRow(['Cell có dữ liệu không được map', unmappedCells.length]);
+      statsWorksheet.addRow(['', '']);
+      statsWorksheet.addRow(['Giá trị unique cần bổ sung:', '']);
+
+      // Thêm thông tin về các giá trị unique không được map
+      Object.entries(unmappedValues).forEach(([column, values]) => {
+        statsWorksheet.addRow([`Cột "${column}"`, `${values.length} giá trị unique`]);
+        statsWorksheet.addRow(['', '']);
+        statsWorksheet.addRow(['Các giá trị cần bổ sung:', '']);
+        values.forEach(value => {
+          statsWorksheet.addRow(['', value]);
+        });
+        statsWorksheet.addRow(['', '']);
+      });
+
+      // Thêm thông tin về các cell không được map
+      statsWorksheet.addRow(['Chi tiết các cell không được map:', '']);
+      
+      // Nhóm cell theo cột để dễ đọc
+      const cellGroups: {[column: string]: string[]} = {};
+      unmappedCells.forEach(({row, col}) => {
+        const column = getTableColumns()[col - 1];
+        const value = originalSourceData[row - 2]?.[column];
+        if (!cellGroups[column]) {
+          cellGroups[column] = [];
+        }
+        cellGroups[column].push(`Hàng ${row}: "${value || ''}"`);
+      });
+
+      Object.entries(cellGroups).forEach(([column, values]) => {
+        statsWorksheet.addRow([column, values.join(', ')]);
+      });
+
+      // Thiết lập column widths cho sheet thống kê
+      statsWorksheet.columns = [
+        { header: 'Thống kê', key: 'Thống kê', width: 30 },
+        { header: 'Giá trị', key: 'Giá trị', width: 50 }
+      ];
+
+      // Style cho header
+      const headerRow = statsWorksheet.getRow(1);
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE6E6E6' }
+      };
+      headerRow.font = {
+        bold: true,
+        color: { argb: 'FF000000' }
+      };
+      headerRow.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+
+      // Style cho dòng thống kê cell không được map
+      const yellowRow = statsWorksheet.getRow(4);
+      yellowRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF99' }
+      };
+      yellowRow.font = {
+        color: { argb: 'FF996600' },
+        bold: true
+      };
+      yellowRow.border = {
+        top: { style: 'thin', color: { argb: 'FF996600' } },
+        bottom: { style: 'thin', color: { argb: 'FF996600' } },
+        left: { style: 'thin', color: { argb: 'FF996600' } },
+        right: { style: 'thin', color: { argb: 'FF996600' } }
+      };
+
+      // Style cho dòng thống kê giá trị unique
+      const orangeRow = statsWorksheet.getRow(6);
+      orangeRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFE6CC' }
+      };
+      orangeRow.font = {
+        color: { argb: 'FFCC6600' },
+        bold: true
+      };
+      orangeRow.border = {
+        top: { style: 'thin', color: { argb: 'FFCC6600' } },
+        bottom: { style: 'thin', color: { argb: 'FFCC6600' } },
+        left: { style: 'thin', color: { argb: 'FFCC6600' } },
+        right: { style: 'thin', color: { argb: 'FFCC6600' } }
+      };
+    }
+
+    workbook.xlsx.writeBuffer().then(buffer => {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'processed_data.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMessage('File đã được tải về thành công!');
+    }).catch(error => {
+      console.error('Error writing Excel file:', error);
+      setMessage('Có lỗi xảy ra khi tải file về.');
+    });
   };
 
   const getTableColumns = () => {
@@ -515,7 +739,12 @@ const ExcelMapper = () => {
               setSourceFile(null);
               setMappingFile(null);
               setProcessedData([]);
+              setOriginalSourceData([]);
               setMessage('');
+              setShowUnmappedRows(false);
+              setUnmappedCells([]);
+              setUnmappedValues({});
+              setMappingData({});
             }}
             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
           >
@@ -548,14 +777,116 @@ const ExcelMapper = () => {
               <h3 className="text-2xl font-bold text-gray-800">
                 Kết quả xử lý
               </h3>
-              <button
-                onClick={downloadProcessedFile}
-                className="btn-secondary flex justify-center items-center"
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Tải về
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  onClick={downloadProcessedFile}
+                  className="btn-secondary flex justify-center items-center"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Tải về
+                </button>
+                {(unmappedCells.length > 0) && (
+                  <button
+                    onClick={() => {
+                      setShowUnmappedRows(!showUnmappedRows);
+                    }}
+                    className="px-4 py-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded-lg transition-colors flex items-center"
+                  >
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    {showUnmappedRows ? 'Ẩn' : 'Hiện'} Chi tiết ({unmappedCells.length} cell vàng)
+                  </button>
+                )}
+              </div>
             </div>
+            
+            {/* Unused Mappings Section */}
+            {showUnmappedRows && (unmappedCells.length > 0) && (
+              <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h4 className="text-lg font-semibold text-yellow-800 mb-3 flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  Chi tiết xử lý dữ liệu
+                </h4>
+                
+                {/* Cell không được map */}
+                {unmappedCells.length > 0 && (
+                  <div className="mb-4">
+                    <h5 className="font-medium text-yellow-700 mb-2 flex items-center">
+                      <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
+                      Cell có dữ liệu không được map ({unmappedCells.length} cell)
+                    </h5>
+                    <p className="text-yellow-600 text-sm mb-3">
+                      Các cell sau đây có dữ liệu không tồn tại trong file mapping:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(() => {
+                        // Nhóm cell theo cột để dễ đọc
+                        const cellGroups: {[column: string]: string[]} = {};
+                        unmappedCells.forEach(({row, col}) => {
+                          const column = getTableColumns()[col - 1];
+                          const value = originalSourceData[row - 2]?.[column];
+                          if (!cellGroups[column]) {
+                            cellGroups[column] = [];
+                          }
+                          cellGroups[column].push(`Hàng ${row}: "${value || ''}"`);
+                        });
+
+                        return Object.entries(cellGroups).map(([column, values]) => (
+                          <span 
+                            key={column} 
+                            className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-sm border border-yellow-300 font-mono"
+                            title={`Cột "${column}" có ${values.length} cell không được map`}
+                          >
+                            {column}: {values.length} cell
+                          </span>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Giá trị unique không được map */}
+                {Object.keys(unmappedValues).length > 0 && (
+                  <div className="mb-4">
+                    <h5 className="font-medium text-orange-700 mb-2 flex items-center">
+                      <span className="w-2 h-2 bg-orange-500 rounded-full mr-2"></span>
+                      Giá trị unique cần bổ sung vào file mapping
+                    </h5>
+                    <p className="text-orange-600 text-sm mb-3">
+                      Các giá trị sau đây không tồn tại trong file mapping và cần được bổ sung:
+                    </p>
+                    <div className="space-y-3">
+                      {Object.entries(unmappedValues).map(([column, values]) => (
+                        <div key={column} className="bg-white p-3 rounded border border-orange-200">
+                          <h6 className="font-medium text-orange-700 mb-2">
+                            Cột "{column}" ({values.length} giá trị unique):
+                          </h6>
+                          <div className="flex flex-wrap gap-2">
+                            {values.map((value, index) => (
+                              <span 
+                                key={index}
+                                className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm border border-orange-300 font-mono"
+                                title={`Giá trị "${value}" cần được bổ sung vào file mapping`}
+                              >
+                                {value}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-yellow-800 text-sm">
+                    <strong>Lưu ý:</strong> 
+                    <br />• Cell có màu vàng: Có dữ liệu không tồn tại trong file mapping
+                    <br />• Giá trị unique màu cam: Các giá trị cần được bổ sung vào file mapping
+                    <br />• Bạn có thể kiểm tra lại file mapping để đảm bảo tính chính xác.
+                  </p>
+                </div>
+              </div>
+            )}
             
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="max-h-96 overflow-auto">
@@ -571,12 +902,31 @@ const ExcelMapper = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {processedData.slice(0, 10).map((row, index) => (
-                      <tr key={index} className="hover:bg-gray-50 transition-colors duration-150">
-                        {getTableColumns().map((column) => (
-                          <td key={column} className="px-4 py-3 text-sm text-gray-700">
-                            {row[column]?.toString() || ''}
-                          </td>
-                        ))}
+                      <tr 
+                        key={index} 
+                        className="hover:bg-gray-50 transition-colors duration-150"
+                      >
+                        {getTableColumns().map((column) => {
+                          // Kiểm tra xem cell này có phải là cell không được map không
+                          const isUnmappedCell = unmappedCells.some(({row: cellRow, col: cellCol}) => {
+                            const columnIndex = getTableColumns().indexOf(column);
+                            return cellRow === index + 2 && cellCol === columnIndex + 1;
+                          });
+                          
+                          return (
+                            <td 
+                              key={column} 
+                              className={`px-4 py-3 text-sm ${
+                                isUnmappedCell 
+                                  ? 'bg-yellow-100 text-orange-800 font-medium italic' 
+                                  : 'text-gray-700'
+                              }`}
+                              title={isUnmappedCell ? `Giá trị "${row[column]}" không tồn tại trong file mapping` : ''}
+                            >
+                              {row[column]?.toString() || ''}
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -588,6 +938,14 @@ const ExcelMapper = () => {
               <p className="text-sm text-gray-500 mt-3 text-center">
                 Hiển thị 10/{processedData.length} dòng đầu tiên
               </p>
+            )}
+            
+            {/* Chú thích về màu sắc */}
+            {unmappedCells.length > 0 && (
+              <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                <span className="inline-block w-3 h-3 bg-yellow-100 border border-yellow-300 mr-1"></span>
+                Cell có màu vàng: Giá trị không tồn tại trong file mapping
+              </div>
             )}
           </div>
         )}
