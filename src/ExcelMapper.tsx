@@ -22,6 +22,21 @@ const ExcelMapper = () => {
   const handleSourceFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        setMessage('File quá lớn. Kích thước tối đa là 10MB.');
+        return;
+      }
+
+      // Validate file extension
+      const validExtensions = ['.xlsx', '.xls'];
+      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (!validExtensions.includes(fileExtension)) {
+        setMessage('Chỉ hỗ trợ file Excel (.xlsx, .xls)');
+        return;
+      }
+
       setSourceFile(file);
       setMessage('');
     }
@@ -30,6 +45,21 @@ const ExcelMapper = () => {
   const handleMappingFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        setMessage('File quá lớn. Kích thước tối đa là 10MB.');
+        return;
+      }
+
+      // Validate file extension
+      const validExtensions = ['.xlsx', '.xls'];
+      const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+      if (!validExtensions.includes(fileExtension)) {
+        setMessage('Chỉ hỗ trợ file Excel (.xlsx, .xls)');
+        return;
+      }
+
       setMappingFile(file);
       setMessage('');
     }
@@ -37,42 +67,124 @@ const ExcelMapper = () => {
 
   const readExcelFile = async (file: File): Promise<XLSX.WorkBook> => {
     return new Promise((resolve, reject) => {
+      // Validate file
+      if (!file) {
+        reject(new Error('File không tồn tại'));
+        return;
+      }
+
+      // Validate file type
+      const validTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel', // .xls
+        'application/octet-stream' // Some systems may use this
+      ];
+      
+      if (!validTypes.includes(file.type) && !file.name.match(/\.(xlsx|xls)$/i)) {
+        reject(new Error(`Loại file không được hỗ trợ: ${file.type}. Chỉ hỗ trợ file .xlsx và .xls`));
+        return;
+      }
+
       const reader = new FileReader();
+      
       reader.onload = (e) => {
         try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          if (!e.target?.result) {
+            reject(new Error('Không thể đọc nội dung file'));
+            return;
+          }
+
+          const data = new Uint8Array(e.target.result as ArrayBuffer);
+          
+          if (data.length === 0) {
+            reject(new Error('File rỗng'));
+            return;
+          }
+
+      const workbook = XLSX.read(data, { 
+        type: 'array', 
+        cellDates: true,
+        cellNF: false,
+        cellStyles: false
+      });
+
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        reject(new Error('File Excel không có sheet nào'));
+        return;
+      }
+
           resolve(workbook);
         } catch (error) {
-          reject(error);
+          console.error('Lỗi khi parse file Excel:', error);
+          reject(new Error(`Lỗi khi đọc file Excel: ${error instanceof Error ? error.message : 'Unknown error'}`));
         }
       };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsArrayBuffer(file);
+      
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        reject(new Error('Không thể đọc file. Vui lòng kiểm tra file có bị hỏng không.'));
+      };
+      
+      reader.onabort = () => {
+        reject(new Error('Quá trình đọc file bị hủy'));
+      };
+
+      try {
+        reader.readAsArrayBuffer(file);
+      } catch (error) {
+        reject(new Error(`Lỗi khi bắt đầu đọc file: ${error instanceof Error ? error.message : 'Unknown error'}`));
+      }
     });
   };
 
   const parseMappingFile = async (file: File): Promise<MappingData> => {
-    const workbook = await readExcelFile(file);
-    const mappingData: MappingData = {};
+    try {
+      const workbook = await readExcelFile(file);
+      const mappingData: MappingData = {};
 
-    workbook.SheetNames.forEach(sheetName => {
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet) as Array<{ value: string; key: string }>;
-      
-      mappingData[sheetName] = {};
-      jsonData.forEach(row => {
-        if (!row.value) {
-          row.value = '';
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        throw new Error('File mapping không có sheet nào');
+      }
+
+      workbook.SheetNames.forEach(sheetName => {
+        const worksheet = workbook.Sheets[sheetName];
+        
+        if (!worksheet) {
+          console.warn(`Sheet ${sheetName} không tồn tại, bỏ qua`);
+          return;
         }
-        if (!row.key) {
-          row.key = '';
+
+        try {
+          const jsonData = XLSX.utils.sheet_to_json(worksheet) as Array<{ value: string; key: string }>;
+          
+          if (!jsonData || jsonData.length === 0) {
+            console.warn(`Sheet ${sheetName} không có dữ liệu mapping`);
+            mappingData[sheetName] = {};
+            return;
+          }
+
+          mappingData[sheetName] = {};
+          jsonData.forEach((row, index) => {
+            if (!row.value) {
+              row.value = '';
+            }
+            if (!row.key) {
+              row.key = '';
+            }
+            mappingData[sheetName][row.value] = row.key;
+          });
+
+        } catch (error) {
+          console.error(`Lỗi khi parse sheet ${sheetName}:`, error);
+          mappingData[sheetName] = {};
         }
-        mappingData[sheetName][row.value] = row.key;
       });
-    });
 
-    return mappingData;
+      return mappingData;
+    } catch (error) {
+      console.error('Lỗi khi parse mapping file:', error);
+      throw new Error(`Lỗi khi đọc file mapping: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   // Hàm xử lý giá trị để áp dụng mapping nếu có
@@ -98,27 +210,141 @@ const ExcelMapper = () => {
     setMessage('Đang xử lý dữ liệu...');
 
     try {
+      
       // Read source file với cellDates: true để tự động xử lý datetime
       const sourceWorkbook = await readExcelFile(sourceFile);
-      const sourceSheet = sourceWorkbook.Sheets[sourceWorkbook.SheetNames[0]];
       
-      // Đọc dữ liệu với cellDates đã được xử lý
-      const sourceData = XLSX.utils.sheet_to_json(sourceSheet, { 
-        defval: ''
-      }) as ProcessedData[];
+      if (!sourceWorkbook.SheetNames || sourceWorkbook.SheetNames.length === 0) {
+        throw new Error('File source không có sheet nào');
+      }
+
+      // Tìm sheet có data thực sự
+      let selectedSheetName = '';
+      let selectedSheet = null;
+      let maxDataRows = 0;
+
+      // Ưu tiên các tên sheet phổ biến
+      const preferredSheetNames = ['Data', 'Sheet1', 'Sheet 1', 'Dữ liệu', 'Data1'];
+      
+      // Đầu tiên tìm sheet có tên ưu tiên
+      for (const sheetName of sourceWorkbook.SheetNames) {
+        if (preferredSheetNames.some(preferred => 
+          sheetName.toLowerCase().includes(preferred.toLowerCase())
+        )) {
+          const worksheet = sourceWorkbook.Sheets[sheetName];
+          if (worksheet && worksheet['!ref']) {
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            const dataRows = range.e.r - range.s.r + 1;
+            const dataCols = range.e.c - range.s.c + 1;
+            
+            // Kiểm tra xem có dữ liệu thực sự không (không chỉ header)
+            if (dataRows >= 2 && dataCols >= 1) {
+              // Kiểm tra thêm xem có ít nhất 1 dòng data không rỗng
+              let hasRealData = false;
+              for (let r = range.s.r + 1; r <= range.e.r; r++) {
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                  const cellAddress = XLSX.utils.encode_cell({ r, c });
+                  const cell = worksheet[cellAddress];
+                  if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+                    hasRealData = true;
+                    break;
+                  }
+                }
+                if (hasRealData) break;
+              }
+              
+              if (hasRealData) {
+                selectedSheetName = sheetName;
+                selectedSheet = worksheet;
+                break; // Ưu tiên sheet đầu tiên có tên phù hợp
+              }
+            }
+          }
+        }
+      }
+
+      // Nếu không tìm thấy sheet ưu tiên, tìm sheet có nhiều data nhất
+      if (!selectedSheet) {
+        for (const sheetName of sourceWorkbook.SheetNames) {
+          const worksheet = sourceWorkbook.Sheets[sheetName];
+          if (worksheet && worksheet['!ref']) {
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            const dataRows = range.e.r - range.s.r + 1; // Số dòng có data
+            const dataCols = range.e.c - range.s.c + 1; // Số cột có data
+            
+            // Chỉ xem xét sheet có ít nhất 2 dòng (header + data) và 1 cột
+            if (dataRows >= 2 && dataCols >= 1 && dataRows > maxDataRows) {
+              // Kiểm tra xem có dữ liệu thực sự không
+              let hasRealData = false;
+              for (let r = range.s.r + 1; r <= range.e.r; r++) {
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                  const cellAddress = XLSX.utils.encode_cell({ r, c });
+                  const cell = worksheet[cellAddress];
+                  if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+                    hasRealData = true;
+                    break;
+                  }
+                }
+                if (hasRealData) break;
+              }
+              
+              if (hasRealData) {
+                maxDataRows = dataRows;
+                selectedSheetName = sheetName;
+                selectedSheet = worksheet;
+              }
+            }
+          }
+        }
+      }
+
+      if (!selectedSheet) {
+        throw new Error('File source không có sheet nào chứa dữ liệu hợp lệ');
+      }
+
+      // Đọc dữ liệu từ sheet đã chọn
+      const sourceData = XLSX.utils.sheet_to_json(selectedSheet, { 
+        defval: '',
+        header: 1, // Đọc header để kiểm tra cấu trúc
+        raw: false
+      }) as any[];
+
+      if (sourceData.length === 0) {
+        throw new Error('Không có dữ liệu trong sheet');
+      }
+
+      if (sourceData.length === 1) {
+        throw new Error('Sheet chỉ có header, không có dữ liệu');
+      }
+
+      // Lấy header từ dòng đầu tiên
+      const headers = sourceData[0] as string[];
+
+      // Chuyển đổi thành array of objects
+      const processedSourceData: ProcessedData[] = [];
+      for (let i = 1; i < sourceData.length; i++) {
+        const row = sourceData[i] as any[];
+        const rowObj: ProcessedData = {};
+        
+        headers.forEach((header, index) => {
+          if (header) {
+            rowObj[header] = row[index] || '';
+          }
+        });
+        
+        processedSourceData.push(rowObj);
+      }
 
       // Parse mapping file
       const mappingData = await parseMappingFile(mappingFile);
 
-      console.log('Mapping data:', mappingData);
-      console.log('Original source data sample:', sourceData.slice(0, 2));
-
       // Process data với logic mapping đơn giản
-      const processed = sourceData.map(row => {
+      const processed = processedSourceData.map((row, rowIndex) => {
         const newRow: ProcessedData = {};
 
         // Tạo cột dob nếu đủ 3 cột, luôn ghi đè
         const hasBirthday = row['birthday_day'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
+        
         Object.keys(row).forEach(column => {
           let originalValue = row[column];
           if (typeof originalValue === 'string') {
@@ -131,6 +357,7 @@ const ExcelMapper = () => {
           }
           newRow[column] = mappedValue;
         });
+        
         // Luôn thêm key dob cho mọi dòng
         if (hasBirthday) {
           const date = String(row['birthday_day']).trim().padStart(2, '0');
@@ -149,10 +376,11 @@ const ExcelMapper = () => {
       });
 
       setProcessedData(processed);
-      setMessage('Dữ liệu đã được xử lý thành công!');
+      setMessage(`Dữ liệu đã được xử lý thành công! Sử dụng sheet "${selectedSheetName}" với ${processed.length} dòng dữ liệu.`);
     } catch (error) {
       console.error('Processing error:', error);
-      setMessage('Có lỗi xảy ra khi xử lý dữ liệu');
+      const errorMessage = error instanceof Error ? error.message : 'Có lỗi xảy ra khi xử lý dữ liệu';
+      setMessage(`Lỗi: ${errorMessage}`);
     } finally {
       setIsProcessing(false);
     }
@@ -272,7 +500,7 @@ const ExcelMapper = () => {
         </div>
 
         {/* Process Button */}
-        <div className="text-center mb-8 flex justify-center items-center">
+        <div className="text-center mb-8 flex justify-center items-center space-x-4">
           <button
             onClick={processData}
             disabled={!sourceFile || !mappingFile || isProcessing}
@@ -280,6 +508,18 @@ const ExcelMapper = () => {
           >
             <Upload className="w-5 h-5 mr-2" />
             {isProcessing ? 'Đang xử lý...' : 'Xử lý dữ liệu'}
+          </button>
+          
+          <button
+            onClick={() => {
+              setSourceFile(null);
+              setMappingFile(null);
+              setProcessedData([]);
+              setMessage('');
+            }}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+          >
+            Reset
           </button>
         </div>
 
