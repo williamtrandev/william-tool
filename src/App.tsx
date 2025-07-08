@@ -141,7 +141,7 @@ function App() {
       // Xuất file
       const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_pick.xlsx');
-      setMessage('Đã tách và tải file thành công!');
+      setMessage(`Đã tách và tải file thành công! Có ${filteredGroups.length} nhóm thoả điều kiện.`);
       
       // Reset file input để cho phép upload file mới
       if (fileInputRef.current) {
