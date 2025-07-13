@@ -9,7 +9,7 @@ function App() {
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [threshold, setThreshold] = useState(2); // Default threshold is 2
-  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping'>('grouping');
+  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping'>('mapping');
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -84,14 +84,14 @@ function App() {
       // Xử lý trim và thêm cột dob nếu có đủ 3 cột, luôn ghi đè
       const processedJson = json.map(row => {
         const newRow: any = {};
-        const hasBirthday = row['birthday_date'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
+        const hasBirthday = row['birthday_day'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
         Object.keys(row).forEach(key => {
           let value = row[key];
           if (typeof value === 'string') value = value.trim();
           newRow[key] = value;
         });
         if (hasBirthday) {
-          const date = String(row['birthday_date']).trim().padStart(2, '0');
+          const date = String(row['birthday_day']).trim().padStart(2, '0');
           const month = String(row['birthday_month']).trim().padStart(2, '0');
           const year = String(row['birthday_year']).trim();
           if (date && month && year) {
@@ -329,17 +329,6 @@ function App() {
           <div className="glass-effect rounded-2xl p-2 shadow-lg">
             <div className="flex space-x-2">
               <button
-                onClick={() => setActiveTab('grouping')}
-                className={`tab-button ${activeTab === 'grouping' ? 'active' : 'inactive'}`}
-              >
-                <span className="flex items-center space-x-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <span>ID Card Grouping</span>
-                </span>
-              </button>
-              <button
                 onClick={() => setActiveTab('mapping')}
                 className={`tab-button ${activeTab === 'mapping' ? 'active' : 'inactive'}`}
               >
@@ -348,6 +337,17 @@ function App() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span>Excel Data Mapper</span>
+                </span>
+              </button>
+              <button
+                onClick={() => setActiveTab('grouping')}
+                className={`tab-button ${activeTab === 'grouping' ? 'active' : 'inactive'}`}
+              >
+                <span className="flex items-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <span>ID Card Grouping</span>
                 </span>
               </button>
             </div>

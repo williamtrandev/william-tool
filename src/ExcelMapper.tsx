@@ -24,6 +24,13 @@ const ExcelMapper = () => {
   const [mappingData, setMappingData] = useState<MappingData>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState('');
+  const [sourceColumns, setSourceColumns] = useState<string[]>([]);
+  const [mappingSheets, setMappingSheets] = useState<string[]>([]);
+  const [unmatchedSheets, setUnmatchedSheets] = useState<string[]>([]);
+  const [selectedAdditionalColumns, setSelectedAdditionalColumns] = useState<string[]>([]);
+  const [showAdditionalMapping, setShowAdditionalMapping] = useState(false);
+  const [selectedSourceColumnsForMapping, setSelectedSourceColumnsForMapping] = useState<string[]>([]);
+  const [showSourceColumnSelection, setShowSourceColumnSelection] = useState(false);
 
   const handleSourceFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -325,6 +332,7 @@ const ExcelMapper = () => {
 
       // Lấy header từ dòng đầu tiên
       const headers = sourceData[0] as string[];
+      setSourceColumns(headers); // Lưu header của file gốc vào state
 
       // Chuyển đổi thành array of objects
       const processedSourceData: ProcessedData[] = [];
@@ -340,12 +348,25 @@ const ExcelMapper = () => {
         
         processedSourceData.push(rowObj);
       }
-
+ 
       setOriginalSourceData(processedSourceData); // Lưu dữ liệu gốc vào state
 
       // Parse mapping file
       const mappingData = await parseMappingFile(mappingFile);
       setMappingData(mappingData); // Lưu mappingData vào state
+      setMappingSheets(Object.keys(mappingData)); // Lưu tên các sheet trong file mapping
+
+      // Theo dõi các sheet trong file mapping không khớp với cột trong file gốc
+      const unmatchedSheetsData: string[] = [];
+      const mappingSheetNames = Object.keys(mappingData);
+      mappingSheetNames.forEach(sheetName => {
+        if (!headers.some(header => 
+          header.toLowerCase().includes(sheetName.toLowerCase())
+        )) {
+          unmatchedSheetsData.push(sheetName);
+        }
+      });
+      setUnmatchedSheets(unmatchedSheetsData);
 
       // Theo dõi các cell có dữ liệu không được map
       const unmappedCellsData: {row: number, col: number}[] = [];
@@ -355,11 +376,11 @@ const ExcelMapper = () => {
       const processed = processedSourceData.map((row, rowIndex) => {
         const newRow: ProcessedData = {};
 
-        // Tạo cột dob nếu đủ 3 cột, luôn ghi đè
-        const hasBirthday = row['birthday_day'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
-        
+        // Xử lý các cột có trong file gốc
         Object.keys(row).forEach(column => {
           let originalValue = row[column];
+          
+          // Trim whitespace nếu là string
           if (typeof originalValue === 'string') {
             originalValue = originalValue.trim();
           }
@@ -374,7 +395,6 @@ const ExcelMapper = () => {
               // Giá trị không tồn tại trong mapping - chỉ thêm vào danh sách cell không được map
               const colIndex = headers.indexOf(column);
               if (colIndex >= 0) {
-                console.log(`Unmapped cell: Row ${rowIndex + 2}, Col ${colIndex + 1}, Column: ${column}, Value: "${originalValue}"`);
                 unmappedCellsData.push({
                   row: rowIndex + 2, // +2 vì Excel bắt đầu từ 1 và có header
                   col: colIndex + 1  // +1 vì Excel bắt đầu từ 1
@@ -392,8 +412,35 @@ const ExcelMapper = () => {
           }
           newRow[column] = mappedValue;
         });
-        
-        // Luôn thêm key dob cho mọi dòng
+
+        // Thêm các cột được chọn bổ sung từ các sheet không khớp
+        selectedAdditionalColumns.forEach(columnName => {
+          // Khởi tạo giá trị mặc định
+          newRow[columnName] = '';
+        });
+
+        // Thực hiện mapping tiếp với các cột nguồn được chọn
+        if (selectedSourceColumnsForMapping.length > 0) {
+          selectedAdditionalColumns.forEach(additionalColumn => {
+            if (mappingData[additionalColumn]) {
+              // Thử mapping với từng cột nguồn được chọn
+              for (const sourceColumn of selectedSourceColumnsForMapping) {
+                // Sử dụng giá trị đã được mapping lần đầu
+                const sourceValue = newRow[sourceColumn];
+                if (sourceValue !== undefined && sourceValue !== null && sourceValue !== '') {
+                  const stringValue = String(sourceValue).trim();
+                  if (Object.prototype.hasOwnProperty.call(mappingData[additionalColumn], stringValue)) {
+                    newRow[additionalColumn] = mappingData[additionalColumn][stringValue];
+                    break; // Dừng khi tìm thấy mapping đầu tiên
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        // Xử lý cột dob nếu có đủ 3 cột birthday
+        const hasBirthday = row['birthday_day'] !== undefined && row['birthday_month'] !== undefined && row['birthday_year'] !== undefined;
         if (hasBirthday) {
           const date = String(row['birthday_day']).trim().padStart(2, '0');
           const month = String(row['birthday_month']).trim().padStart(2, '0');
@@ -429,6 +476,12 @@ const ExcelMapper = () => {
       if (unmappedCellsCount > 0) {
         messageText += ` Có ${unmappedCellsCount} cell có dữ liệu không được map.`;
       }
+      if (selectedAdditionalColumns.length > 0) {
+        messageText += ` Đã thêm ${selectedAdditionalColumns.length} cột bổ sung: ${selectedAdditionalColumns.join(', ')}.`;
+        if (selectedSourceColumnsForMapping.length > 0) {
+          messageText += ` Thực hiện mapping tiếp với ${selectedSourceColumnsForMapping.length} cột nguồn: ${selectedSourceColumnsForMapping.join(', ')}.`;
+        }
+      }
       
       setMessage(messageText);
     } catch (error) {
@@ -459,12 +512,11 @@ const ExcelMapper = () => {
       worksheet.addRow(rowData);
     });
 
-    // Thiết lập column widths tự động
-    worksheet.columns = headers.map(column => ({
-      header: column,
-      key: column,
-      width: Math.max(column.length, 15)
-    }));
+    // Thiết lập column widths tự động (không sử dụng worksheet.columns để tránh tạo cột trống)
+    headers.forEach((column, index) => {
+      const col = worksheet.getColumn(index + 1);
+      col.width = Math.max(column.length, 15);
+    });
 
     // Style cho header
     const headerRow = worksheet.getRow(1);
@@ -522,6 +574,10 @@ const ExcelMapper = () => {
       statsWorksheet.addRow(['Tổng số hàng', processedData.length]);
       statsWorksheet.addRow(['Tổng số cột', getTableColumns().length]);
       statsWorksheet.addRow(['Cell có dữ liệu không được map', unmappedCells.length]);
+      if (selectedAdditionalColumns.length > 0) {
+        statsWorksheet.addRow(['Cột bổ sung được thêm', selectedAdditionalColumns.length]);
+        statsWorksheet.addRow(['Danh sách cột bổ sung', selectedAdditionalColumns.join(', ')]);
+      }
       statsWorksheet.addRow(['', '']);
       statsWorksheet.addRow(['Giá trị unique cần bổ sung:', '']);
 
@@ -613,6 +669,26 @@ const ExcelMapper = () => {
         left: { style: 'thin', color: { argb: 'FFCC6600' } },
         right: { style: 'thin', color: { argb: 'FFCC6600' } }
       };
+
+      // Style cho dòng thống kê cột bổ sung (nếu có)
+      if (selectedAdditionalColumns.length > 0) {
+        const blueRow = statsWorksheet.getRow(6 + selectedAdditionalColumns.length);
+        blueRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE6F3FF' }
+        };
+        blueRow.font = {
+          color: { argb: 'FF0066CC' },
+          bold: true
+        };
+        blueRow.border = {
+          top: { style: 'thin', color: { argb: 'FF0066CC' } },
+          bottom: { style: 'thin', color: { argb: 'FF0066CC' } },
+          left: { style: 'thin', color: { argb: 'FF0066CC' } },
+          right: { style: 'thin', color: { argb: 'FF0066CC' } }
+        };
+      }
     }
 
     workbook.xlsx.writeBuffer().then(buffer => {
@@ -632,9 +708,55 @@ const ExcelMapper = () => {
     });
   };
 
-  const getTableColumns = () => {
-    if (processedData.length === 0) return [];
-    return Object.keys(processedData[0]);
+  const getTableColumns = (): string[] => {
+    // Lấy các cột từ dữ liệu đã xử lý (nếu có)
+    const processedColumns = new Set<string>();
+    if (processedData.length > 0) {
+      processedData.forEach(row => {
+        Object.keys(row).forEach(key => processedColumns.add(key));
+      });
+    }
+    
+    // Lấy các cột từ dữ liệu gốc (nếu có)
+    const sourceColumnsSet = new Set(sourceColumns);
+    
+    // Ưu tiên thứ tự từ sourceColumns (thứ tự gốc trong file Excel)
+    const originalColumns: string[] = [];
+    
+    // Thêm các cột từ sourceColumns theo thứ tự gốc
+    sourceColumns.forEach(column => {
+      if (processedColumns.has(column) || sourceColumnsSet.has(column)) {
+        originalColumns.push(column);
+      }
+    });
+    
+    // Thêm các cột khác từ processedData (nếu có) nhưng không có trong sourceColumns
+    Array.from(processedColumns).forEach(column => {
+      if (!originalColumns.includes(column)) {
+        originalColumns.push(column);
+      }
+    });
+    
+    // Loại bỏ các cột trùng lặp nhưng giữ nguyên thứ tự
+    const uniqueOriginalColumns: string[] = [];
+    const seen = new Set<string>();
+    originalColumns.forEach(column => {
+      if (!seen.has(column)) {
+        seen.add(column);
+        uniqueOriginalColumns.push(column);
+      }
+    });
+    
+    // Thêm các cột bổ sung vào cuối cùng
+    const finalColumns = [...uniqueOriginalColumns];
+    selectedAdditionalColumns.forEach(column => {
+      if (!finalColumns.includes(column)) {
+        finalColumns.push(column);
+      }
+    });
+    
+    // Loại bỏ các cột không có header (trống hoặc chỉ có khoảng trắng)
+    return finalColumns.filter(column => column && column.trim() !== '');
   };
 
   return (
@@ -731,7 +853,9 @@ const ExcelMapper = () => {
             className="btn-primary flex justify-center items-center"
           >
             <Upload className="w-5 h-5 mr-2" />
-            {isProcessing ? 'Đang xử lý...' : 'Xử lý dữ liệu'}
+            {isProcessing ? 'Đang xử lý...' : 
+              (selectedAdditionalColumns.length > 0 ? 'Tiếp tục xử lý' : 'Xử lý dữ liệu')
+            }
           </button>
           
           <button
@@ -745,12 +869,103 @@ const ExcelMapper = () => {
               setUnmappedCells([]);
               setUnmappedValues({});
               setMappingData({});
+              setSourceColumns([]);
+              setMappingSheets([]);
+              setUnmatchedSheets([]);
+              setSelectedAdditionalColumns([]);
+              setShowAdditionalMapping(false);
+              setSelectedSourceColumnsForMapping([]);
+              setShowSourceColumnSelection(false);
             }}
             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
           >
             Reset
           </button>
         </div>
+
+        {/* Additional Mapping Options */}
+        {unmatchedSheets.length > 0 && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h4 className="text-lg font-semibold text-blue-800 mb-3 flex items-center">
+              <CheckCircle className="w-5 h-5 mr-2" />
+              Tùy chọn mapping bổ sung
+            </h4>
+            <p className="text-blue-700 text-sm mb-3">
+              Phát hiện {unmatchedSheets.length} sheet trong file mapping không khớp với cột trong file gốc. 
+              Bạn có thể chọn để thực hiện mapping bổ sung:
+            </p>
+            
+            <div className="space-y-2">
+              {unmatchedSheets.map((sheetName) => (
+                <label key={sheetName} className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedAdditionalColumns.includes(sheetName)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedAdditionalColumns([...selectedAdditionalColumns, sheetName]);
+                      } else {
+                        setSelectedAdditionalColumns(selectedAdditionalColumns.filter(col => col !== sheetName));
+                      }
+                    }}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-blue-800 font-medium">{sheetName}</span>
+                  <span className="text-blue-600 text-sm">(Sheet không khớp)</span>
+                </label>
+              ))}
+            </div>
+            
+            {selectedAdditionalColumns.length > 0 && (
+              <div className="mt-4 p-3 bg-white border border-blue-200 rounded">
+                <p className="text-blue-800 text-sm">
+                  <strong>Lưu ý:</strong> Các cột được chọn sẽ được thêm vào kết quả cuối cùng với giá trị mặc định.
+                  Bạn có thể cập nhật file mapping để thêm các giá trị mapping cho các cột này.
+                </p>
+                <div className="mt-3">
+                  <button
+                    onClick={() => setShowSourceColumnSelection(!showSourceColumnSelection)}
+                    className="px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm transition-colors"
+                  >
+                    {showSourceColumnSelection ? 'Ẩn' : 'Hiện'} chọn cột nguồn để mapping tiếp
+                  </button>
+                </div>
+                
+                {showSourceColumnSelection && (
+                  <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded">
+                    <h6 className="font-medium text-gray-700 mb-2">Chọn cột nguồn để mapping với cột mới:</h6>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {sourceColumns.map((column) => (
+                        <label key={column} className="flex items-center space-x-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedSourceColumnsForMapping.includes(column)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedSourceColumnsForMapping([...selectedSourceColumnsForMapping, column]);
+                              } else {
+                                setSelectedSourceColumnsForMapping(selectedSourceColumnsForMapping.filter(col => col !== column));
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                          <span className="text-gray-700 text-sm">{column}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {selectedSourceColumnsForMapping.length > 0 && (
+                      <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                        <p className="text-blue-700 text-xs">
+                          <strong>Đã chọn:</strong> {selectedSourceColumnsForMapping.join(', ')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Message */}
         {message && (
@@ -885,6 +1100,43 @@ const ExcelMapper = () => {
                     <br />• Bạn có thể kiểm tra lại file mapping để đảm bảo tính chính xác.
                   </p>
                 </div>
+                
+                {/* Thông tin về các cột bổ sung */}
+                {selectedAdditionalColumns.length > 0 && (
+                  <div className="mb-4">
+                    <h5 className="font-medium text-blue-700 mb-2 flex items-center">
+                      <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                      Cột bổ sung được thêm ({selectedAdditionalColumns.length} cột)
+                    </h5>
+                    <p className="text-blue-600 text-sm mb-3">
+                      Các cột sau đây đã được thêm vào kết quả cuối cùng:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedAdditionalColumns.map((column) => (
+                        <span 
+                          key={column}
+                          className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm border border-blue-300 font-mono"
+                          title={`Cột "${column}" được thêm từ sheet mapping`}
+                        >
+                          {column}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                      <p className="text-blue-800 text-sm">
+                        <strong>Lưu ý:</strong> Các cột này có giá trị mặc định là rỗng. 
+                        Bạn có thể cập nhật file mapping để thêm các giá trị mapping cho các cột này.
+                      </p>
+                      {selectedSourceColumnsForMapping.length > 0 && (
+                        <div className="mt-2 p-2 bg-white border border-blue-300 rounded">
+                          <p className="text-blue-700 text-sm">
+                            <strong>Mapping tiếp:</strong> Đã thực hiện mapping với các cột nguồn: {selectedSourceColumnsForMapping.join(', ')}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             
