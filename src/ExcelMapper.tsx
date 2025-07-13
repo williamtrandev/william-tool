@@ -935,7 +935,7 @@ const ExcelMapper = () => {
                   <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded">
                     <h6 className="font-medium text-gray-700 mb-2">Chọn cột nguồn để mapping với cột mới:</h6>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {sourceColumns.map((column) => (
+                      {sourceColumns.filter(column => column && column.trim() !== '').map((column) => (
                         <label key={column} className="flex items-center space-x-3 cursor-pointer">
                           <input
                             type="checkbox"
