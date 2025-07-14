@@ -353,6 +353,7 @@ const ExcelMapper = () => {
 
       // Parse mapping file
       const mappingData = await parseMappingFile(mappingFile);
+      console.log('Mapping từ file mapping:', mappingData); // LOG MAPPING
       setMappingData(mappingData); // Lưu mappingData vào state
       setMappingSheets(Object.keys(mappingData)); // Lưu tên các sheet trong file mapping
 
@@ -375,7 +376,6 @@ const ExcelMapper = () => {
       // Process data với logic mapping đơn giản
       const processed = processedSourceData.map((row, rowIndex) => {
         const newRow: ProcessedData = {};
-
         // Xử lý các cột có trong file gốc
         Object.keys(row).forEach(column => {
           let originalValue = row[column];
@@ -387,7 +387,7 @@ const ExcelMapper = () => {
           
           // Kiểm tra xem giá trị có được map không
           let mappedValue = originalValue;
-          if (mappingData[column] && originalValue !== null && originalValue !== undefined && originalValue !== '') {
+          if (mappingData[column] && originalValue !== null && originalValue !== undefined) {
             const currentValue = originalValue.toString();
             if (Object.prototype.hasOwnProperty.call(mappingData[column], currentValue)) {
               mappedValue = mappingData[column][currentValue];
