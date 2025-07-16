@@ -397,7 +397,7 @@ const ExcelMapper = () => {
               if (colIndex >= 0) {
                 unmappedCellsData.push({
                   row: rowIndex + 2, // +2 vì Excel bắt đầu từ 1 và có header
-                  col: colIndex + 1  // +1 vì Excel bắt đầu từ 1
+                  col: colIndex
                 });
                 if (!unmappedValuesData[column]) {
                   unmappedValuesData[column] = [];
