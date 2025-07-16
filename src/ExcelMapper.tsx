@@ -31,6 +31,7 @@ const ExcelMapper = () => {
   const [showAdditionalMapping, setShowAdditionalMapping] = useState(false);
   const [selectedSourceColumnsForMapping, setSelectedSourceColumnsForMapping] = useState<string[]>([]);
   const [showSourceColumnSelection, setShowSourceColumnSelection] = useState(false);
+  const [invalidLegalBirthdayRows, setInvalidLegalBirthdayRows] = useState<Set<number>>(new Set());
 
   const handleSourceFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -353,7 +354,6 @@ const ExcelMapper = () => {
 
       // Parse mapping file
       const mappingData = await parseMappingFile(mappingFile);
-      console.log('Mapping từ file mapping:', mappingData); // LOG MAPPING
       setMappingData(mappingData); // Lưu mappingData vào state
       setMappingSheets(Object.keys(mappingData)); // Lưu tên các sheet trong file mapping
 
@@ -374,6 +374,7 @@ const ExcelMapper = () => {
       const unmappedValuesData: {[column: string]: string[]} = {};
 
       // Process data với logic mapping đơn giản
+      const invalidRows = new Set<number>();
       const processed = processedSourceData.map((row, rowIndex) => {
         const newRow: ProcessedData = {};
         // Xử lý các cột có trong file gốc
@@ -454,6 +455,35 @@ const ExcelMapper = () => {
           newRow['dob'] = '';
         }
 
+        // Xử lý cột legal_birthday nếu có
+        if (row['legal_birthday']) {
+          let legal = row['legal_birthday'];
+          let isInvalidLegalBirthday = false;
+          if (legal instanceof Date && !isNaN(Number(legal))) {
+            const y = legal.getFullYear();
+            const m = String(legal.getMonth() + 1).padStart(2, '0');
+            const d = String(legal.getDate()).padStart(2, '0');
+            newRow['legal_birthday'] = `${y}-${m}-${d}`;
+          } else if (typeof legal === 'string' && legal.trim() !== '') {
+            // Chỉ nhận dạng d-m-y hoặc d/m/y
+            const match = legal.match(/^([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{4})$/);
+            if (match) {
+              const d = match[1].padStart(2, '0');
+              const m = match[2].padStart(2, '0');
+              const y = match[3];
+              newRow['legal_birthday'] = `${y}-${m}-${d}`;
+            } else {
+              newRow['legal_birthday'] = legal;
+              isInvalidLegalBirthday = true;
+            }
+          } else {
+            newRow['legal_birthday'] = '';
+          }
+          if (isInvalidLegalBirthday) {
+            invalidRows.add(rowIndex);
+          }
+        }
+
         return newRow;
       });
 
@@ -467,6 +497,7 @@ const ExcelMapper = () => {
       
       setUnmappedValues(uniqueUnmappedValues);
       setProcessedData(processed);
+      setInvalidLegalBirthdayRows(invalidRows);
       
       // Tính thống kê
       const totalRows = processed.length;
@@ -536,23 +567,13 @@ const ExcelMapper = () => {
       right: { style: 'thin', color: { argb: 'FF000000' } }
     };
 
-    // Style cho các cell có dữ liệu không tồn tại trong mapping (tô vàng từng cell)
-    unmappedCells.forEach(({row, col}) => {
-      const cell = worksheet.getCell(row, col);
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFFFF99' } // Màu vàng nhạt
-      };
-      cell.font = {
-        color: { argb: 'FF996600' }, // Màu cam đậm cho text
-        italic: true
-      };
-    });
-
-    // Style cho các cell sai định dạng phone/email (tô đỏ)
+    // Style cho các cell sai định dạng phone/email/legal_birthday (tô đỏ)
     headers.forEach((header, colIdx) => {
-      if (header.toLowerCase().includes('phone') || header.toLowerCase().includes('email')) {
+      if (
+        header.toLowerCase().includes('phone') ||
+        header.toLowerCase().includes('email') ||
+        header === 'legal_birthday'
+      ) {
         for (let rowIdx = 0; rowIdx < processedData.length; rowIdx++) {
           const value = processedData[rowIdx][header]?.toString() || '';
           let isInvalid = false;
@@ -560,6 +581,8 @@ const ExcelMapper = () => {
             isInvalid = !/^\d{8,15}$/.test(value) && value !== '';
           } else if (header.toLowerCase().includes('email')) {
             isInvalid = !/^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(value) && value !== '';
+          } else if (header === 'legal_birthday') {
+            isInvalid = invalidLegalBirthdayRows.has(rowIdx) && value !== '';
           }
           if (isInvalid) {
             const cell = worksheet.getCell(rowIdx + 2, colIdx + 1); // +2 vì header ở dòng 1
@@ -568,13 +591,19 @@ const ExcelMapper = () => {
               pattern: 'solid',
               fgColor: { argb: 'FFD6B3B3' } // Màu đỏ nhạt
             };
-            cell.font = {
-              color: { argb: 'FF990000' }, // Màu đỏ đậm
-              bold: true
-            };
           }
         }
       }
+    });
+
+    // Style cho các cell có dữ liệu không tồn tại trong mapping (tô vàng từng cell)
+    unmappedCells.forEach(({row, col}) => {
+      const cell = worksheet.getCell(row, col);
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF99' } // Màu vàng nhạt
+      };
     });
 
     // Thêm comment cho header để giải thích màu vàng
@@ -901,6 +930,7 @@ const ExcelMapper = () => {
               setShowAdditionalMapping(false);
               setSelectedSourceColumnsForMapping([]);
               setShowSourceColumnSelection(false);
+              setInvalidLegalBirthdayRows(new Set());
             }}
             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
           >
@@ -1190,23 +1220,17 @@ const ExcelMapper = () => {
                             return cellRow === index + 2 && cellCol === columnIndex + 1;
                           });
 
-                          // Kiểm tra lỗi định dạng phone/email
+                          // Kiểm tra lỗi định dạng phone/email/hoặc legal_birthday
                           let isInvalidPhone = false;
                           let isInvalidEmail = false;
-                          let errorMsg = '';
+                          let isInvalidLegalBirthday = false;
                           const value = row[column]?.toString() || '';
                           if (column.toLowerCase().includes('phone')) {
-                            // Chỉ cho phép số, không ký tự đặc biệt, không khoảng trắng
                             isInvalidPhone = !/^\d{8,15}$/.test(value);
-                            if (isInvalidPhone && value !== '') {
-                              errorMsg = 'Số điện thoại không hợp lệ: chỉ cho phép số, không có ký tự đặc biệt hoặc khoảng trắng.';
-                            }
                           } else if (column.toLowerCase().includes('email')) {
-                            // Regex email chặt chẽ hơn
                             isInvalidEmail = !/^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(value);
-                            if (isInvalidEmail && value !== '') {
-                              errorMsg = 'Email không hợp lệ.';
-                            }
+                          } else if (column === 'legal_birthday') {
+                            isInvalidLegalBirthday = invalidLegalBirthdayRows.has(index);
                           }
                           
                           return (
@@ -1215,7 +1239,7 @@ const ExcelMapper = () => {
                               className={`px-4 py-3 text-sm ${
                                 isUnmappedCell 
                                   ? 'bg-yellow-100 text-orange-800 font-medium italic' 
-                                  : isInvalidPhone || isInvalidEmail
+                                  : isInvalidPhone || isInvalidEmail || isInvalidLegalBirthday
                                     ? 'bg-red-100 text-red-800 font-bold' 
                                     : 'text-gray-700'
                               }`}
