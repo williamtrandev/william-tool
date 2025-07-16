@@ -537,10 +537,8 @@ const ExcelMapper = () => {
     };
 
     // Style cho các cell có dữ liệu không tồn tại trong mapping (tô vàng từng cell)
-    console.log('Unmapped cells to style:', unmappedCells);
     unmappedCells.forEach(({row, col}) => {
       const cell = worksheet.getCell(row, col);
-      console.log(`Styling cell: Row ${row}, Col ${col}`);
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -550,6 +548,33 @@ const ExcelMapper = () => {
         color: { argb: 'FF996600' }, // Màu cam đậm cho text
         italic: true
       };
+    });
+
+    // Style cho các cell sai định dạng phone/email (tô đỏ)
+    headers.forEach((header, colIdx) => {
+      if (header.toLowerCase().includes('phone') || header.toLowerCase().includes('email')) {
+        for (let rowIdx = 0; rowIdx < processedData.length; rowIdx++) {
+          const value = processedData[rowIdx][header]?.toString() || '';
+          let isInvalid = false;
+          if (header.toLowerCase().includes('phone')) {
+            isInvalid = !/^\d{8,15}$/.test(value) && value !== '';
+          } else if (header.toLowerCase().includes('email')) {
+            isInvalid = !/^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(value) && value !== '';
+          }
+          if (isInvalid) {
+            const cell = worksheet.getCell(rowIdx + 2, colIdx + 1); // +2 vì header ở dòng 1
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFD6B3B3' } // Màu đỏ nhạt
+            };
+            cell.font = {
+              color: { argb: 'FF990000' }, // Màu đỏ đậm
+              bold: true
+            };
+          }
+        }
+      }
     });
 
     // Thêm comment cho header để giải thích màu vàng
@@ -1164,6 +1189,25 @@ const ExcelMapper = () => {
                             const columnIndex = getTableColumns().indexOf(column);
                             return cellRow === index + 2 && cellCol === columnIndex + 1;
                           });
+
+                          // Kiểm tra lỗi định dạng phone/email
+                          let isInvalidPhone = false;
+                          let isInvalidEmail = false;
+                          let errorMsg = '';
+                          const value = row[column]?.toString() || '';
+                          if (column.toLowerCase().includes('phone')) {
+                            // Chỉ cho phép số, không ký tự đặc biệt, không khoảng trắng
+                            isInvalidPhone = !/^\d{8,15}$/.test(value);
+                            if (isInvalidPhone && value !== '') {
+                              errorMsg = 'Số điện thoại không hợp lệ: chỉ cho phép số, không có ký tự đặc biệt hoặc khoảng trắng.';
+                            }
+                          } else if (column.toLowerCase().includes('email')) {
+                            // Regex email chặt chẽ hơn
+                            isInvalidEmail = !/^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$/.test(value);
+                            if (isInvalidEmail && value !== '') {
+                              errorMsg = 'Email không hợp lệ.';
+                            }
+                          }
                           
                           return (
                             <td 
@@ -1171,11 +1215,12 @@ const ExcelMapper = () => {
                               className={`px-4 py-3 text-sm ${
                                 isUnmappedCell 
                                   ? 'bg-yellow-100 text-orange-800 font-medium italic' 
-                                  : 'text-gray-700'
+                                  : isInvalidPhone || isInvalidEmail
+                                    ? 'bg-red-100 text-red-800 font-bold' 
+                                    : 'text-gray-700'
                               }`}
-                              title={isUnmappedCell ? `Giá trị "${row[column]}" không tồn tại trong file mapping` : ''}
                             >
-                              {row[column]?.toString() || ''}
+                              {value}
                             </td>
                           );
                         })}
