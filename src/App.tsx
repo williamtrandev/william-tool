@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import ExcelMapper from './ExcelMapper';
+import QRCodeGenerator from './QRCodeGenerator';
 
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -9,7 +10,7 @@ function App() {
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [threshold, setThreshold] = useState(2); // Default threshold is 2
-  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping'>('mapping');
+  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping' | 'qrcode'>('mapping');
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -350,13 +351,26 @@ function App() {
                   <span>ID Card Grouping</span>
                 </span>
               </button>
+              <button
+                onClick={() => setActiveTab('qrcode')}
+                className={`tab-button ${activeTab === 'qrcode' ? 'active' : 'inactive'}`}
+              >
+                <span className="flex items-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V6a1 1 0 00-1-1H5a1 1 0 00-1 1v1a1 1 0 001 1zm12 0h2a1 1 0 001-1V6a1 1 0 00-1-1h-2a1 1 0 00-1 1v1a1 1 0 001 1zM5 20h2a1 1 0 001-1v-1a1 1 0 00-1-1H5a1 1 0 00-1 1v1a1 1 0 001 1z" />
+                  </svg>
+                  <span>QR Code Generator</span>
+                </span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Content */}
         <div className="animate-bounce-in">
-          {activeTab === 'grouping' ? renderIDCardGrouping() : <ExcelMapper />}
+          {activeTab === 'grouping' ? renderIDCardGrouping() : 
+           activeTab === 'qrcode' ? <QRCodeGenerator /> : 
+           <ExcelMapper />}
         </div>
       </div>
     </div>
