@@ -230,12 +230,12 @@ const QRCodeGenerator = () => {
 
             // Vẽ text
             ctx.fillStyle = '#000000';
-            ctx.font = '12px Arial';
+            ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
             // Wrap text nếu quá dài
-            const maxWidth = qrSize - 10;
+            const maxWidth = qrSize - 20;
             const words = text.split(' ');
             let lines: string[] = [];
             let currentLine = '';
@@ -256,7 +256,7 @@ const QRCodeGenerator = () => {
             }
 
             // Vẽ từng dòng text
-            const lineHeight = 14;
+            const lineHeight = 16;
             const startY = qrSize + (textHeight - lines.length * lineHeight) / 2;
             
             lines.forEach((line, index) => {
@@ -770,12 +770,17 @@ const QRCodeGenerator = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {previewData.map((item, index) => (
                 <div key={index} className="border border-gray-200 rounded-lg p-4 text-center bg-white">
-                  <div className="mb-3">
+                  <div className="mb-3 flex justify-center">
                     <img 
                       src={item.qrDataURL} 
                       alt={`QR Code ${index + 1}`}
-                      className="mx-auto border border-gray-200 rounded-lg"
-                      style={{ width: '200px', height: '200px' }}
+                      className="border border-gray-200 rounded-lg shadow-sm"
+                      style={{ 
+                        width: '200px',
+                        height: 'auto',
+                        maxHeight: '240px',
+                        display: 'block'
+                      }}
                     />
                   </div>
                   <div className="text-sm text-gray-600 mb-2">
