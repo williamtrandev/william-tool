@@ -11,6 +11,11 @@ function App() {
   const [dragActive, setDragActive] = useState(false);
   const [threshold, setThreshold] = useState(2); // Default threshold is 2
   const [activeTab, setActiveTab] = useState<'grouping' | 'mapping' | 'qrcode'>('mapping');
+  
+  // New state for column statistics
+  const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [groupedData, setGroupedData] = useState<Record<string, any[]>>({});
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -102,47 +107,17 @@ function App() {
         return newRow;
       });
 
-      // Gom nhóm theo ID card/Passport pick
-      const groups: Record<string, any[]> = {};
-      processedJson.forEach(row => {
-        const key = row['ID Card Pick'];
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(row);
-      });
+      // Lưu dữ liệu đã xử lý để sử dụng sau
+      setGroupedData({ 'raw_data': processedJson });
       
-      // Lọc ra các nhóm có >1 dòng và sắp xếp theo số lượng dòng từ nhiều đến ít
-      const filteredGroups = Object.entries(groups)
-        .filter(([, rows]) => rows.length >= threshold)
-        .sort(([, rowsA], [, rowsB]) => rowsB.length - rowsA.length);
-
-      if (filteredGroups.length === 0) {
-        setMessage(`Không có nhóm nào có từ ${threshold} dòng trùng ID Card Pick trở lên.`);
-        setProcessing(false);
-        return;
+      // Get available columns from the first row
+      if (processedJson.length > 0) {
+        const columns = Object.keys(processedJson[0]).filter(col => col !== 'ID Card Pick');
+        setAvailableColumns(columns);
+        setSelectedColumns([]);
       }
       
-      // Tạo workbook mới
-      const newWb = XLSX.utils.book_new();
-      
-      // Thêm các sheet chứa dữ liệu đã lọc
-      filteredGroups.forEach(([key, rows]) => {
-        const ws = XLSX.utils.json_to_sheet(rows);
-        
-        // Thiết lập column widths tự động
-        const columnWidths = Object.keys(rows[0] || {}).map(column => ({
-          wch: Math.max(column.length, 15)
-        }));
-        ws['!cols'] = columnWidths;
-        
-        // Đặt tên sheet theo giá trị ID card và số lượng dòng trùng
-        const sheetName = `ID ${key} (${rows.length} dòng)`;
-        XLSX.utils.book_append_sheet(newWb, ws, sheetName);
-      });
-      
-      // Xuất file
-      const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
-      saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_pick.xlsx');
-      setMessage(`Đã tách và tải file thành công! Có ${filteredGroups.length} nhóm thoả điều kiện.`);
+      setMessage(`Đã upload file thành công! File có ${processedJson.length} dòng dữ liệu. Bây giờ bạn có thể chọn cột để thống kê và điều chỉnh ngưỡng.`);
       
       // Reset file input để cho phép upload file mới
       if (fileInputRef.current) {
@@ -162,15 +137,115 @@ function App() {
     }
   };
 
+  // Function to calculate statistics for a specific column
+  const calculateColumnStats = (data: any[], columnName: string) => {
+    const stats: Record<string, number> = {};
+    data.forEach(row => {
+      const value = row[columnName];
+      const key = value ? String(value).trim() : 'Empty';
+      stats[key] = (stats[key] || 0) + 1;
+    });
+    return Object.entries(stats)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
+  // Function to generate and download Excel file
+  const downloadExcelFile = () => {
+    if (Object.keys(groupedData).length === 0 || !groupedData['raw_data']) {
+      setMessage('Chưa có dữ liệu để tải về. Vui lòng upload file trước.');
+      return;
+    }
+
+    try {
+      const rawData = groupedData['raw_data'];
+      
+      // Gom nhóm theo ID card/Passport pick
+      const groups: Record<string, any[]> = {};
+      rawData.forEach(row => {
+        const key = row['ID Card Pick'];
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+      });
+      
+      // Lọc ra các nhóm có >1 dòng và sắp xếp theo số lượng dòng từ nhiều đến ít
+      const filteredGroups = Object.entries(groups)
+        .filter(([, rows]) => rows.length >= threshold)
+        .sort(([, rowsA], [, rowsB]) => rowsB.length - rowsA.length);
+
+      if (filteredGroups.length === 0) {
+        setMessage(`Không có nhóm nào có từ ${threshold} dòng trùng ID Card Pick trở lên.`);
+        return;
+      }
+
+      // Tạo workbook mới
+      const newWb = XLSX.utils.book_new();
+      
+      // Thêm các sheet chứa dữ liệu đã lọc
+      filteredGroups.forEach(([key, rows]) => {
+        // Tạo dữ liệu cho sheet này - bắt đầu với dữ liệu gốc
+        let sheetData = [...rows];
+        
+        // Thêm bảng thống kê sau dữ liệu đã lọc nếu có cột được chọn
+        if (selectedColumns.length > 0) {
+          // Thêm dòng trống
+          sheetData.push({});
+          
+          // Thêm thống kê cho từng cột được chọn
+          selectedColumns.forEach((column) => {
+            const stats = calculateColumnStats(rows, column);
+            
+            // Thêm header cho bảng thống kê
+            const tableHeader: any = {};
+            tableHeader[Object.keys(rows[0] || {})[0] || 'ID Card Pick'] = `${column}`;
+            tableHeader[Object.keys(rows[0] || {})[1] || 'Name'] = 'Số lượng';
+            sheetData.push(tableHeader);
+            
+            // Thêm dữ liệu thống kê dạng bảng 2 cột
+            stats.forEach(({ value, count }) => {
+              const statRow: any = {};
+              statRow[Object.keys(rows[0] || {})[0] || 'ID Card Pick'] = `${value}`;
+              statRow[Object.keys(rows[0] || {})[1] || 'Name'] = count;
+              sheetData.push(statRow);
+            });
+            
+            // Thêm dòng trống giữa các cột
+            sheetData.push({});
+          });
+        }
+        
+        const ws = XLSX.utils.json_to_sheet(sheetData);
+        
+        // Thiết lập column widths tự động
+        const columnWidths = Object.keys(rows[0] || {}).map(column => ({
+          wch: Math.max(column.length, 15)
+        }));
+        ws['!cols'] = columnWidths;
+        
+        // Đặt tên sheet theo giá trị ID card và số lượng dòng trùng
+        const sheetName = `ID ${key} (${rows.length} dòng)`;
+        XLSX.utils.book_append_sheet(newWb, ws, sheetName);
+      });
+      
+      // Xuất file
+      const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
+      saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_pick.xlsx');
+      setMessage(`Đã tải file Excel thành công! Có ${filteredGroups.length} nhóm thoả điều kiện.${selectedColumns.length > 0 ? ' Đã thêm bảng thống kê.' : ''}`);
+    } catch (err) {
+      console.log(err);
+      setMessage('Có lỗi xảy ra khi tạo file Excel.');
+    }
+  };
+
   const renderIDCardGrouping = () => (
-    <div className="card max-w-4xl mx-auto animate-fade-in">
+    <div className="card max-w-6xl mx-auto animate-fade-in">
       <div className="p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gradient mb-2">
             ID Card Grouping
           </h1>
           <p className="text-lg text-gray-600">
-            Gom nhóm các dòng trùng <span className="font-semibold text-primary-600">ID card/Passport pick</span>
+            Gom nhóm các dòng trùng <span className="font-semibold text-primary-600">ID Card Pick</span>
           </p>
         </div>
 
@@ -264,6 +339,84 @@ function App() {
           </div>
         </div>
 
+        {/* Column Selection for Statistics */}
+        {availableColumns.length > 0 && (
+          <div className="mt-8 p-6 bg-blue-50 rounded-xl">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">Thống kê theo cột</h3>
+            <div className="mb-4">
+              <p className="text-gray-600 text-center mb-4">
+                Chọn các cột để thêm thống kê count vào file Excel download:
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start space-x-2">
+                  <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-yellow-800 font-medium">Thống kê sẽ được thêm vào file Excel</p>
+                    <p className="text-yellow-700 text-sm mt-1">
+                      Khi chọn cột, một bảng thống kê 2 cột sẽ được thêm vào cuối mỗi sheet với format: Tên cột | Count.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {availableColumns.map((column) => (
+                  <label key={column} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedColumns.includes(column)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedColumns([...selectedColumns, column]);
+                        } else {
+                          setSelectedColumns(selectedColumns.filter(col => col !== column));
+                        }
+                      }}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700 truncate" title={column}>
+                      {column}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {selectedColumns.length > 0 && (
+              <div className="text-center">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                  <p className="text-green-800 font-medium">
+                    Đã chọn {selectedColumns.length} cột để thống kê
+                  </p>
+                  <p className="text-green-700 text-sm mt-1">
+                    File Excel sẽ bao gồm bảng thống kê 2 cột cho các cột đã chọn
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Process and Download Button */}
+        {Object.keys(groupedData).length > 0 && groupedData['raw_data'] && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={downloadExcelFile}
+              className="bg-primary-600 hover:bg-primary-700 text-white font-bold py-4 px-8 rounded-xl text-lg transition-all duration-200 hover:scale-105 shadow-lg"
+            >
+              <span className="flex items-center justify-center space-x-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Xử lý và tải về file Excel</span>
+              </span>
+            </button>
+            <p className="text-gray-600 text-sm mt-2">
+              File sẽ chứa các sheet cho từng ID card{selectedColumns.length > 0 ? ' và bảng thống kê 2 cột đẹp' : ''}
+            </p>
+          </div>
+        )}
+
         {/* Hướng dẫn sử dụng chi tiết */}
         <div className="mt-8 p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl">
           <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">Hướng dẫn sử dụng</h3>
@@ -272,27 +425,27 @@ function App() {
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-blue-600 font-bold text-lg">1</span>
               </div>
-              <h4 className="font-semibold text-gray-800 mb-2">Thiết lập ngưỡng</h4>
+              <h4 className="font-semibold text-gray-800 mb-2">Upload file</h4>
               <p className="text-gray-600 text-sm">
-                Điều chỉnh ngưỡng số lượng dòng trùng (mặc định là 2). Chỉ các nhóm có số dòng &gt;= ngưỡng mới được tách thành sheet riêng.
+                Upload file Excel có chứa cột "ID Card Pick". Hệ thống sẽ tự động tìm và xử lý dữ liệu.
               </p>
             </div>
             <div className="text-center">
               <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-purple-600 font-bold text-lg">2</span>
               </div>
-              <h4 className="font-semibold text-gray-800 mb-2">Tải lên file</h4>
+              <h4 className="font-semibold text-gray-800 mb-2">Chọn cột & Ngưỡng</h4>
               <p className="text-gray-600 text-sm">
-                Tải lên file Excel có chứa cột "ID card/Passport pick". File sẽ được tự động tìm và xử lý từ dòng đầu tiên có cột này.
+                Sau khi upload thành công, chọn các cột cần thống kê và điều chỉnh ngưỡng số lượng dòng trùng.
               </p>
             </div>
             <div className="text-center">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-green-600 font-bold text-lg">3</span>
               </div>
-              <h4 className="font-semibold text-gray-800 mb-2">Tải về kết quả</h4>
+              <h4 className="font-semibold text-gray-800 mb-2">Xử lý & Tải về</h4>
               <p className="text-gray-600 text-sm">
-                File Excel mới sẽ được tạo với các sheet riêng cho từng ID card, sắp xếp theo số lượng dòng trùng từ nhiều đến ít.
+                Nhấn nút "Xử lý và tải về file Excel" để tạo file với các sheet riêng và bảng thống kê 2 cột đẹp.
               </p>
             </div>
           </div>
@@ -301,10 +454,11 @@ function App() {
           <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200">
             <h4 className="font-semibold text-gray-800 mb-2">📋 Yêu cầu file:</h4>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>• File Excel (.xlsx, .xls) có cột "ID card/Passport pick"</li>
+              <li>• File Excel (.xlsx, .xls) có cột "ID Card Pick"</li>
               <li>• Cột này có thể nằm ở bất kỳ vị trí nào trong file</li>
               <li>• Ứng dụng sẽ tự động tìm dòng đầu tiên chứa cột này</li>
               <li>• Các trường datetime sẽ được tự động xử lý và giữ nguyên format</li>
+              <li>• Sheet "Thống kê Count" sẽ chứa: Sheet ID, Cột, Giá trị, Số lượng, Tổng dòng trong sheet</li>
             </ul>
           </div>
         </div>
