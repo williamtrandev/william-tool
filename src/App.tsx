@@ -164,8 +164,11 @@ function App() {
       const groups: Record<string, any[]> = {};
       rawData.forEach(row => {
         const key = row['ID Card Pick'];
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(row);
+        // Chỉ thêm vào group nếu ID Card Pick không rỗng
+        if (key && key.toString().trim() !== '') {
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(row);
+        }
       });
       
       // Lọc ra các nhóm có >1 dòng và sắp xếp theo số lượng dòng từ nhiều đến ít
@@ -234,8 +237,16 @@ function App() {
       // Tạo file thứ 2 chứa toàn bộ dữ liệu từ tất cả các sheet
       const allDataWb = XLSX.utils.book_new();
       
-      // Lọc chỉ lấy cột "bib" từ toàn bộ dữ liệu (ưu tiên 'BIB' trước, nếu không có thì lấy 'bib')
-      const bibValues = rawData.map(row => row['BIB'] || row['bib'] || '');
+      // Lọc chỉ lấy cột "bib" từ các sheet đã được lọc (thoả điều kiện ngưỡng)
+      const bibValues: string[] = [];
+      filteredGroups.forEach(([key, rows]) => {
+        rows.forEach(row => {
+          const bibValue = row['BIB'] || row['bib'] || '';
+          if (bibValue) {
+            bibValues.push(bibValue);
+          }
+        });
+      });
       
       // Tạo dữ liệu dạng array 2D chỉ có giá trị, không có header
       const bibDataArray = bibValues.map(value => [value]); // Chỉ data rows, không có header
@@ -246,13 +257,13 @@ function App() {
       // Thiết lập column width cho cột bib
       allDataSheet['!cols'] = [{ wch: 15 }];
       
-      XLSX.utils.book_append_sheet(allDataWb, allDataSheet, 'Toàn bộ dữ liệu');
+      XLSX.utils.book_append_sheet(allDataWb, allDataSheet, 'Danh sách BIB');
       
       // Xuất file thứ 2
       const allDataOutData = XLSX.write(allDataWb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([allDataOutData], { type: 'application/octet-stream' }), 'all_data.xlsx');
       
-      setMessage(`Đã tải 2 file Excel thành công! File 1: ${filteredGroups.length} sheet cho từng ID card. File 2: Danh sách BIB.${selectedColumns.length > 0 ? ' Đã thêm bảng thống kê.' : ''}`);
+      setMessage(`Đã tải 2 file Excel thành công! File 1: ${filteredGroups.length} sheet cho từng ID card. File 2: Danh sách BIB từ ${filteredGroups.length} sheet đã lọc.${selectedColumns.length > 0 ? ' Đã thêm bảng thống kê.' : ''}`);
     } catch (err) {
       console.log(err);
       setMessage('Có lỗi xảy ra khi tạo file Excel.');
