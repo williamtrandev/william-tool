@@ -230,7 +230,29 @@ function App() {
       // Xuất file
       const outData = XLSX.write(newWb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([outData], { type: 'application/octet-stream' }), 'filtered_ID_card_pick.xlsx');
-      setMessage(`Đã tải file Excel thành công! Có ${filteredGroups.length} nhóm thoả điều kiện.${selectedColumns.length > 0 ? ' Đã thêm bảng thống kê.' : ''}`);
+      
+      // Tạo file thứ 2 chứa toàn bộ dữ liệu từ tất cả các sheet
+      const allDataWb = XLSX.utils.book_new();
+      
+      // Lọc chỉ lấy cột "bib" từ toàn bộ dữ liệu (ưu tiên 'BIB' trước, nếu không có thì lấy 'bib')
+      const bibValues = rawData.map(row => row['BIB'] || row['bib'] || '');
+      
+      // Tạo dữ liệu dạng array 2D chỉ có giá trị, không có header
+      const bibDataArray = bibValues.map(value => [value]); // Chỉ data rows, không có header
+      
+      // Tạo worksheet từ array 2D
+      const allDataSheet = XLSX.utils.aoa_to_sheet(bibDataArray);
+      
+      // Thiết lập column width cho cột bib
+      allDataSheet['!cols'] = [{ wch: 15 }];
+      
+      XLSX.utils.book_append_sheet(allDataWb, allDataSheet, 'Toàn bộ dữ liệu');
+      
+      // Xuất file thứ 2
+      const allDataOutData = XLSX.write(allDataWb, { bookType: 'xlsx', type: 'array' });
+      saveAs(new Blob([allDataOutData], { type: 'application/octet-stream' }), 'all_data.xlsx');
+      
+      setMessage(`Đã tải 2 file Excel thành công! File 1: ${filteredGroups.length} sheet cho từng ID card. File 2: Danh sách BIB.${selectedColumns.length > 0 ? ' Đã thêm bảng thống kê.' : ''}`);
     } catch (err) {
       console.log(err);
       setMessage('Có lỗi xảy ra khi tạo file Excel.');
@@ -412,7 +434,7 @@ function App() {
               </span>
             </button>
             <p className="text-gray-600 text-sm mt-2">
-              File sẽ chứa các sheet cho từng ID card{selectedColumns.length > 0 ? ' và bảng thống kê 2 cột đẹp' : ''}
+              File sẽ chứa các sheet cho từng ID card{selectedColumns.length > 0 ? ' và bảng thống kê 2 cột đẹp' : ''}. Sẽ tải về 2 file: file phân tách theo ID và file danh sách BIB.
             </p>
           </div>
         )}
