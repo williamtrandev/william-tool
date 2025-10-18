@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import ExcelMapper from './ExcelMapper';
 import QRCodeGenerator from './QRCodeGenerator';
+import SheetSplitter from './SheetSplitter';
 
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -10,7 +11,7 @@ function App() {
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [threshold, setThreshold] = useState(2); // Default threshold is 2
-  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping' | 'qrcode'>('mapping');
+  const [activeTab, setActiveTab] = useState<'grouping' | 'mapping' | 'qrcode' | 'splitter'>('mapping');
   
   // New state for column statistics
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
@@ -277,8 +278,8 @@ function App() {
       <div className="p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gradient mb-2">
-            ID Card Grouping
-          </h1>
+          ID Card Grouping
+        </h1>
           <p className="text-lg text-gray-600">
             Gom nhóm các dòng trùng <span className="font-semibold text-primary-600">ID Card Pick</span>
           </p>
@@ -307,7 +308,7 @@ function App() {
             className="hidden"
           />
           
-          {processing ? (
+            {processing ? (
             <div className="space-y-4">
               <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto"></div>
               <p className="text-gray-600 font-medium">Đang xử lý file...</p>
@@ -551,14 +552,26 @@ function App() {
                   <span>QR Code Generator</span>
                 </span>
               </button>
-            </div>
+              <button
+                onClick={() => setActiveTab('splitter')}
+                className={`tab-button ${activeTab === 'splitter' ? 'active' : 'inactive'}`}
+              >
+                <span className="flex items-center space-x-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Sheet Splitter</span>
+                </span>
+              </button>
           </div>
         </div>
+      </div>
 
         {/* Content */}
         <div className="animate-bounce-in">
           {activeTab === 'grouping' ? renderIDCardGrouping() : 
            activeTab === 'qrcode' ? <QRCodeGenerator /> : 
+           activeTab === 'splitter' ? <SheetSplitter /> :
            <ExcelMapper />}
         </div>
       </div>
