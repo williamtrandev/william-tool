@@ -226,7 +226,9 @@ function App() {
         ws['!cols'] = columnWidths;
         
         // Đặt tên sheet theo giá trị ID card và số lượng dòng trùng
-        const sheetName = `ID ${key} (${rows.length} dòng)`;
+        // Làm sạch tên sheet để loại bỏ các ký tự không được phép
+        const cleanKey = String(key).replace(/[:\\\/\?\*\[\]]/g, '_');
+        const sheetName = `ID ${cleanKey} (${rows.length} dòng)`;
         XLSX.utils.book_append_sheet(newWb, ws, sheetName);
       });
       
