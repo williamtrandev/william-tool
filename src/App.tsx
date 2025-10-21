@@ -228,8 +228,16 @@ function App() {
         
         // Đặt tên sheet theo giá trị ID card và số lượng dòng trùng
         // Làm sạch tên sheet để loại bỏ các ký tự không được phép
-        const cleanKey = String(key).replace(/[:\\\/\?\*\[\]]/g, '_');
-        const sheetName = `ID ${cleanKey} (${rows.length} dòng)`;
+        const cleanKey = String(key).replace(/[:\\\/\?\*\[\]-]/g, '_');
+        let sheetName = `ID ${cleanKey} (${rows.length} dòng)`;
+        
+        // Cắt ngắn tên sheet nếu vượt quá 31 ký tự (giới hạn của Excel)
+        if (sheetName.length > 31) {
+          const maxKeyLength = 31 - `ID  () dòng`.length - String(rows.length).length;
+          const truncatedKey = cleanKey.substring(0, maxKeyLength);
+          sheetName = `ID ${truncatedKey} (${rows.length} dòng)`;
+        }
+        
         XLSX.utils.book_append_sheet(newWb, ws, sheetName);
       });
       

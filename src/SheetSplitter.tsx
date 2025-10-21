@@ -124,7 +124,13 @@ const SheetSplitter = () => {
         }
         
         // Làm sạch tên file để loại bỏ ký tự không hợp lệ
-        const cleanSheetName = sheet.name.replace(/[:\\\/\?\*\[\]]/g, '_');
+        let cleanSheetName = sheet.name.replace(/[:\\\/\?\*\[\]-]/g, '_');
+        
+        // Cắt ngắn tên sheet nếu vượt quá 31 ký tự (giới hạn của Excel)
+        if (cleanSheetName.length > 31) {
+          cleanSheetName = cleanSheetName.substring(0, 31);
+        }
+        
         XLSX.utils.book_append_sheet(newWb, ws, cleanSheetName);
         
         // Xuất file Excel
