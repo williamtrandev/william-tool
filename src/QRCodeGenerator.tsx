@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
@@ -23,6 +23,76 @@ const QRCodeGenerator = () => {
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [previewData, setPreviewData] = useState<{content: string, text: string, fileName: string, qrDataURL: string}[]>([]);
+  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
+  const [generateBySheet, setGenerateBySheet] = useState<boolean>(false);
+  const [sheetHeaders, setSheetHeaders] = useState<Record<string, string[]>>({});
+  const [mismatchedSheets, setMismatchedSheets] = useState<string[]>([]);
+
+  const arraysEqual = (a: string[], b: string[]): boolean => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  };
+
+  // Helper: wrap text into lines based on maxWidth
+  const wrapTextIntoLines = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  };
+
+  // Khi ở chế độ nhiều sheet: cập nhật danh sách cột (columns) theo sheet đầu tiên
+  useEffect(() => {
+    if (!workbook || !generateBySheet) return;
+    const sheetNames = workbook.SheetNames;
+    if (sheetNames.length === 0) return;
+    const first = sheetNames[0];
+    const base = sheetHeaders[first] || [];
+    setColumns(base);
+
+    // Cập nhật danh sách sheet mismatch dựa trên header
+    const mismatches = sheetNames.filter(name => !arraysEqual(base, (sheetHeaders[name] || [])));
+    setMismatchedSheets(mismatches);
+
+    // Reset selections nếu cột đang chọn không còn tồn tại
+    if (selectedContentColumn && !base.includes(selectedContentColumn)) {
+      setSelectedContentColumn('');
+    }
+    if (selectedTextColumn && !base.includes(selectedTextColumn)) {
+      setSelectedTextColumn('');
+    }
+    if (selectedFileNameColumns.length > 0) {
+      const filtered = selectedFileNameColumns.filter(col => base.includes(col));
+      if (filtered.length !== selectedFileNameColumns.length) {
+        setSelectedFileNameColumns(filtered);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbook, generateBySheet, sheetHeaders]);
+
+  // Khi thay đổi danh sách sheet được chọn, cập nhật cảnh báo mismatch
+  useEffect(() => {
+    if (!workbook || !generateBySheet) return;
+    const first = workbook.SheetNames[0];
+    const base = sheetHeaders[first] || [];
+    const mismatches = selectedSheets.filter(name => !arraysEqual(base, (sheetHeaders[name] || [])));
+    setMismatchedSheets(mismatches);
+  }, [selectedSheets, workbook, generateBySheet, sheetHeaders]);
 
   // Hàm xử lý tên file tiếng Việt
   const sanitizeFileName = (fileName: string): string => {
@@ -87,9 +157,31 @@ const QRCodeGenerator = () => {
     
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { cellDates: true });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
+      const wb = XLSX.read(data, { cellDates: true });
+      setWorkbook(wb);
+
+      // Thu thập headers cho tất cả sheet và mặc định chọn tất cả
+      const headersMap: Record<string, string[]> = {};
+      wb.SheetNames.forEach((sheetName) => {
+        const ws = wb.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as any[];
+        const headers = (json[0] as string[] | undefined) || [];
+        headersMap[sheetName] = headers.filter(h => h && h.trim() !== '');
+      });
+      setSheetHeaders(headersMap);
+
+      // Nếu có nhiều sheet, cho phép chọn sheet
+      if (wb.SheetNames.length > 1) {
+        setMessage(`File có ${wb.SheetNames.length} sheet. Bạn có thể chọn tạo QR code theo từng sheet riêng biệt.`);
+        setSelectedSheets(wb.SheetNames);
+        setGenerateBySheet(true);
+        setIsProcessing(false);
+        return;
+      }
+      
+      // Nếu chỉ có 1 sheet, xử lý như cũ
+      const firstSheetName = wb.SheetNames[0];
+      const worksheet = wb.Sheets[firstSheetName];
       
       // Đọc dữ liệu từ sheet đầu tiên
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
@@ -143,6 +235,7 @@ const QRCodeGenerator = () => {
       setSelectedFileNameColumns([]);
       setShowText(true);
       setPreviewData([]);
+      setGenerateBySheet(false);
       
     } catch (error) {
       console.error('Error reading file:', error);
@@ -178,8 +271,45 @@ const QRCodeGenerator = () => {
     setMessage('Đang tạo preview QR codes...');
 
     try {
-      const preview = [];
-      const dataToProcess = excelData.slice(0, 3); // Giảm xuống 3 preview
+      const preview = [] as {content: string, text: string, fileName: string, qrDataURL: string}[];
+
+      // Xác định dữ liệu nguồn cho preview
+      let dataForPreview: ExcelData[] = [];
+      if (generateBySheet && workbook) {
+        // Lấy sheet đầu tiên được chọn (hoặc sheet đầu tiên của workbook)
+        const sheetName = selectedSheets[0] || workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+          setMessage('Không thể đọc dữ liệu sheet để tạo preview.');
+          return;
+        }
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+          defval: '',
+          header: 1,
+          raw: false
+        }) as any[];
+        if (jsonData.length <= 1) {
+          setMessage('Sheet không có dữ liệu để tạo preview.');
+          return;
+        }
+        const headers = (jsonData[0] as string[]).filter(h => h && h.trim() !== '');
+        const processed: ExcelData[] = [];
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i] as any[];
+          const rowObj: ExcelData = {};
+          headers.forEach((header, index) => {
+            let value = row[index] || '';
+            if (typeof value === 'string') value = value.trim();
+            rowObj[header] = value;
+          });
+          processed.push(rowObj);
+        }
+        dataForPreview = processed;
+      } else {
+        dataForPreview = excelData;
+      }
+
+      const dataToProcess = dataForPreview.slice(0, 3); // Giảm xuống 3 preview
 
       for (const row of dataToProcess) {
         const content = String(row[selectedContentColumn] || '');
@@ -210,7 +340,13 @@ const QRCodeGenerator = () => {
           if (ctx) {
             // Thiết lập kích thước canvas (QR code + text)
             const qrSize = 200;
-            const textHeight = 40;
+            const lineHeight = 16;
+            const maxWidth = qrSize - 20;
+
+            // Tính số dòng sau khi wrap
+            ctx.font = 'bold 14px Arial';
+            const lines = wrapTextIntoLines(ctx, text, maxWidth);
+            const textHeight = Math.max(40, lines.length * lineHeight + 8);
             canvas.width = qrSize;
             canvas.height = qrSize + textHeight;
 
@@ -233,32 +369,7 @@ const QRCodeGenerator = () => {
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            
-            // Wrap text nếu quá dài
-            const maxWidth = qrSize - 20;
-            const words = text.split(' ');
-            let lines: string[] = [];
-            let currentLine = '';
-
-            for (const word of words) {
-              const testLine = currentLine ? `${currentLine} ${word}` : word;
-              const metrics = ctx.measureText(testLine);
-              
-              if (metrics.width > maxWidth && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-              } else {
-                currentLine = testLine;
-              }
-            }
-            if (currentLine) {
-              lines.push(currentLine);
-            }
-
-            // Vẽ từng dòng text
-            const lineHeight = 16;
             const startY = qrSize + (textHeight - lines.length * lineHeight) / 2;
-            
             lines.forEach((line, index) => {
               const y = startY + index * lineHeight;
               ctx.fillText(line, qrSize / 2, y);
@@ -316,8 +427,8 @@ const QRCodeGenerator = () => {
       return;
     }
 
-    if (excelData.length === 0) {
-      setMessage('Không có dữ liệu để tạo QR code.');
+    if (generateBySheet && selectedSheets.length === 0) {
+      setMessage('Vui lòng chọn ít nhất một sheet để tạo QR code.');
       return;
     }
 
@@ -326,158 +437,120 @@ const QRCodeGenerator = () => {
 
     try {
       const zip = new JSZip();
-      const qrFolder = zip.folder('qr-codes');
 
-      if (!qrFolder) {
-        throw new Error('Không thể tạo thư mục trong file ZIP');
-      }
+      if (generateBySheet && workbook) {
+        // Tạo QR code theo từng sheet riêng biệt
+        for (const sheetName of selectedSheets) {
+          const worksheet = workbook.Sheets[sheetName];
+          if (!worksheet) continue;
 
-      // Tạo QR codes cho từng dòng
-      for (let i = 0; i < excelData.length; i++) {
-        const row = excelData[i];
-        const content = String(row[selectedContentColumn] || '');
-        const text = showText ? String(row[selectedTextColumn] || '') : '';
-        
-        // Tạo tên file từ nhiều cột
-        const fileNameParts = selectedFileNameColumns.map(col => String(row[col] || '')).filter(part => part.trim());
-        const fileName = fileNameParts.join(fileNameSeparator);
+          // Đọc dữ liệu từ sheet
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            defval: '',
+            header: 1,
+            raw: false
+          }) as any[];
 
-        if (!content.trim()) {
-          continue; // Bỏ qua dòng có nội dung rỗng
-        }
+          if (jsonData.length <= 1) continue; // Bỏ qua sheet không có dữ liệu
 
-        try {
-          // Tạo QR code
-          const qrDataURL = await QRCode.toDataURL(content, {
-            width: 300,
-            margin: 2,
-            color: {
-              dark: '#000000',
-              light: '#FFFFFF'
-            }
-          });
+          // Lấy header từ dòng đầu tiên
+          const headers = jsonData[0] as string[];
+          const validHeaders = headers.filter(header => header && header.trim() !== '');
 
-          let blob: Blob;
+          // Tạo folder cho sheet này
+          const cleanSheetName = sheetName.replace(/[:\\\/\?\*\[\]-]/g, '_');
+          const sheetFolder = zip.folder(cleanSheetName);
+          if (!sheetFolder) continue;
 
-          // Tạo canvas để thêm text (nếu có bật hiển thị text)
-          if (showText) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            if (!ctx) continue;
-
-            // Tải QR code image
-            const img = new Image();
-            await new Promise((resolve, reject) => {
-              img.onload = resolve;
-              img.onerror = reject;
-              img.src = qrDataURL;
-            });
-
-            // Thiết lập kích thước canvas (QR code + text)
-            const qrSize = 300;
-            const textHeight = 50;
-            canvas.width = qrSize;
-            canvas.height = qrSize + textHeight;
-
-            // Vẽ background trắng
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Vẽ QR code
-            ctx.drawImage(img, 0, 0, qrSize, qrSize);
-
-            // Vẽ text
-            ctx.fillStyle = '#000000';
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
+          // Chuyển đổi thành array of objects
+          const processedData: ExcelData[] = [];
+          for (let i = 1; i < jsonData.length; i++) {
+            const row = jsonData[i] as any[];
+            const rowObj: ExcelData = {};
             
-            // Wrap text nếu quá dài
-            const maxWidth = qrSize - 20;
-            const words = text.split(' ');
-            let lines: string[] = [];
-            let currentLine = '';
-
-            for (const word of words) {
-              const testLine = currentLine ? `${currentLine} ${word}` : word;
-              const metrics = ctx.measureText(testLine);
-              
-              if (metrics.width > maxWidth && currentLine) {
-                lines.push(currentLine);
-                currentLine = word;
-              } else {
-                currentLine = testLine;
+            validHeaders.forEach((header, index) => {
+              let value = row[index] || '';
+              if (typeof value === 'string') {
+                value = value.trim();
               }
-            }
-            if (currentLine) {
-              lines.push(currentLine);
-            }
-
-            // Vẽ từng dòng text
-            const lineHeight = 20;
-            const startY = qrSize + (textHeight - lines.length * lineHeight) / 2;
+              rowObj[header] = value;
+            });
             
-            lines.forEach((line, index) => {
-              const y = startY + index * lineHeight;
-              ctx.fillText(line, qrSize / 2, y);
-            });
-
-            // Chuyển canvas thành blob
-            blob = await new Promise<Blob>((resolve) => {
-              canvas.toBlob((blob) => {
-                if (blob) resolve(blob);
-              }, 'image/png');
-            });
-          } else {
-            // Chỉ tạo QR code không có text
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            if (!ctx) continue;
-
-            // Thiết lập kích thước canvas (chỉ QR code)
-            const qrSize = 300;
-            canvas.width = qrSize;
-            canvas.height = qrSize;
-
-            // Vẽ background trắng
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Tải QR code image
-            const img = new Image();
-            await new Promise((resolve, reject) => {
-              img.onload = resolve;
-              img.onerror = reject;
-              img.src = qrDataURL;
-            });
-
-            // Vẽ QR code
-            ctx.drawImage(img, 0, 0, qrSize, qrSize);
-
-            // Chuyển canvas thành blob
-            blob = await new Promise<Blob>((resolve) => {
-              canvas.toBlob((blob) => {
-                if (blob) resolve(blob);
-              }, 'image/png');
-            });
+            processedData.push(rowObj);
           }
 
-                     // Thêm vào ZIP với tên file dựa trên cột được chọn
-           let finalFileName = sanitizeFileName(fileName) + '.png';
-           
-           // Xử lý trường hợp tên file trùng lặp
-           let counter = 1;
-           const originalFileName = finalFileName;
-           while (qrFolder.file(finalFileName)) {
-             const nameWithoutExt = originalFileName.replace('.png', '');
-             finalFileName = `${nameWithoutExt}_${counter}.png`;
-             counter++;
-           }
-           
-           qrFolder.file(finalFileName, blob);
+          // Tạo QR codes cho sheet này
+          for (let i = 0; i < processedData.length; i++) {
+            const row = processedData[i];
+            const content = String(row[selectedContentColumn] || '');
+            const text = showText ? String(row[selectedTextColumn] || '') : '';
+            
+            // Tạo tên file từ nhiều cột
+            const fileNameParts = selectedFileNameColumns.map(col => String(row[col] || '')).filter(part => part.trim());
+            const fileName = fileNameParts.join(fileNameSeparator);
 
-        } catch (error) {
-          console.error(`Lỗi khi tạo QR code cho dòng ${i + 1}:`, error);
+            if (!content.trim()) continue;
+
+            try {
+              const blob = await createQRCodeBlob(content, text);
+              let finalFileName = sanitizeFileName(fileName) + '.png';
+              
+              // Xử lý trường hợp tên file trùng lặp
+              let counter = 1;
+              const originalFileName = finalFileName;
+              while (sheetFolder.file(finalFileName)) {
+                const nameWithoutExt = originalFileName.replace('.png', '');
+                finalFileName = `${nameWithoutExt}_${counter}.png`;
+                counter++;
+              }
+              
+              sheetFolder.file(finalFileName, blob);
+            } catch (error) {
+              console.error(`Lỗi khi tạo QR code cho dòng ${i + 1} trong sheet ${sheetName}:`, error);
+            }
+          }
+        }
+      } else {
+        // Tạo QR code từ dữ liệu hiện tại (single sheet mode)
+        if (excelData.length === 0) {
+          setMessage('Không có dữ liệu để tạo QR code.');
+          return;
+        }
+
+        const qrFolder = zip.folder('qr-codes');
+        if (!qrFolder) {
+          throw new Error('Không thể tạo thư mục trong file ZIP');
+        }
+
+        // Tạo QR codes cho từng dòng
+        for (let i = 0; i < excelData.length; i++) {
+          const row = excelData[i];
+          const content = String(row[selectedContentColumn] || '');
+          const text = showText ? String(row[selectedTextColumn] || '') : '';
+          
+          // Tạo tên file từ nhiều cột
+          const fileNameParts = selectedFileNameColumns.map(col => String(row[col] || '')).filter(part => part.trim());
+          const fileName = fileNameParts.join(fileNameSeparator);
+
+          if (!content.trim()) continue;
+
+          try {
+            const blob = await createQRCodeBlob(content, text);
+            let finalFileName = sanitizeFileName(fileName) + '.png';
+            
+            // Xử lý trường hợp tên file trùng lặp
+            let counter = 1;
+            const originalFileName = finalFileName;
+            while (qrFolder.file(finalFileName)) {
+              const nameWithoutExt = originalFileName.replace('.png', '');
+              finalFileName = `${nameWithoutExt}_${counter}.png`;
+              counter++;
+            }
+            
+            qrFolder.file(finalFileName, blob);
+          } catch (error) {
+            console.error(`Lỗi khi tạo QR code cho dòng ${i + 1}:`, error);
+          }
         }
       }
 
@@ -494,13 +567,111 @@ const QRCodeGenerator = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      setMessage(`Đã tạo thành công file ZIP chứa ${excelData.length} QR codes!`);
+      const totalSheets = generateBySheet ? selectedSheets.length : 1;
+      setMessage(`Đã tạo thành công file ZIP với ${totalSheets} folder!`);
       
     } catch (error) {
       console.error('Error generating QR codes:', error);
       setMessage('Có lỗi xảy ra khi tạo QR codes.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // Helper function để tạo QR code blob
+  const createQRCodeBlob = async (content: string, text: string): Promise<Blob> => {
+    // Tạo QR code
+    const qrDataURL = await QRCode.toDataURL(content, {
+      width: 300,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+
+    // Tạo canvas để thêm text (nếu có bật hiển thị text)
+    if (showText) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Cannot get canvas context');
+
+      // Tải QR code image
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = qrDataURL;
+      });
+
+      // Thiết lập kích thước canvas (QR code + text)
+      const qrSize = 300;
+      const lineHeight = 20;
+      const maxWidth = qrSize - 20;
+
+      // Tính số dòng sau khi wrap
+      ctx.font = '16px Arial';
+      const lines = wrapTextIntoLines(ctx, text, maxWidth);
+      const textHeight = Math.max(50, lines.length * lineHeight + 10);
+      canvas.width = qrSize;
+      canvas.height = qrSize + textHeight;
+
+      // Vẽ background trắng
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Vẽ QR code
+      ctx.drawImage(img, 0, 0, qrSize, qrSize);
+
+      // Vẽ text
+      ctx.fillStyle = '#000000';
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const startY = qrSize + (textHeight - lines.length * lineHeight) / 2;
+      lines.forEach((line, index) => {
+        const y = startY + index * lineHeight;
+        ctx.fillText(line, qrSize / 2, y);
+      });
+
+      // Chuyển canvas thành blob
+      return new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+        }, 'image/png');
+      });
+    } else {
+      // Chỉ tạo QR code không có text
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Cannot get canvas context');
+
+      // Thiết lập kích thước canvas (chỉ QR code)
+      const qrSize = 300;
+      canvas.width = qrSize;
+      canvas.height = qrSize;
+
+      // Vẽ background trắng
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Tải QR code image
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = qrDataURL;
+      });
+
+      // Vẽ QR code
+      ctx.drawImage(img, 0, 0, qrSize, qrSize);
+
+      // Chuyển canvas thành blob
+      return new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+        }, 'image/png');
+      });
     }
   };
 
@@ -559,8 +730,83 @@ const QRCodeGenerator = () => {
           )}
         </div>
 
+        {/* Sheet Selection for Multi-Sheet Files */}
+        {workbook && workbook.SheetNames.length > 1 && (
+          <div className="card p-6 mb-8">
+            <h3 className="text-xl font-bold text-gray-800 mb-6 text-center">
+              Chọn sheet để tạo QR Code
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-gray-600 text-center mb-4">
+                File có {workbook.SheetNames.length} sheet. Chọn sheet để tạo QR code riêng biệt cho từng sheet:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {workbook.SheetNames.map((sheetName, index) => (
+                  <label key={index} className="flex items-center space-x-3 cursor-pointer p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={selectedSheets.includes(sheetName)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedSheets([...selectedSheets, sheetName]);
+                        } else {
+                          setSelectedSheets(selectedSheets.filter(sheet => sheet !== sheetName));
+                        }
+                      }}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate" title={sheetName}>
+                        {sheetName}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Sheet {index + 1}
+                      </p>
+                      {(() => {
+                        // So sánh header của sheet này với sheet đầu tiên
+                        const first = workbook.SheetNames[0];
+                        const base = sheetHeaders[first] || [];
+                        const current = sheetHeaders[sheetName] || [];
+                        const ok = arraysEqual(base, current);
+                        return !ok ? (
+                          <span className="text-xs text-red-600">Header khác với sheet đầu tiên</span>
+                        ) : null;
+                      })()}
+                    </div>
+                  </label>
+                ))}
+              </div>
+              
+              <div className="mt-4 text-center">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-blue-800 font-medium">
+                    Đã chọn {selectedSheets.length} / {workbook.SheetNames.length} sheet
+                  </p>
+                  <p className="text-blue-700 text-sm mt-1">
+                    Mỗi sheet được chọn sẽ tạo thành một folder riêng trong file ZIP
+                  </p>
+                  {(() => {
+                    // Tính danh sách sheet không khớp header
+                    const first = workbook.SheetNames[0];
+                    const base = sheetHeaders[first] || [];
+                    const mismatches = selectedSheets.filter(name => !arraysEqual(base, (sheetHeaders[name] || [])));
+                    const hasMismatch = mismatches.length > 0;
+                    if (hasMismatch) {
+                      return (
+                        <p className="text-red-600 text-sm mt-2">Không thể tạo: Có sheet có header KHÁC ({mismatches.join(', ')})</p>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Column Selection */}
-        {excelData.length > 0 && (
+        {(excelData.length > 0 || (generateBySheet && workbook && workbook.SheetNames.length > 0)) && (
           <div className="card p-6 mb-8">
             <h3 className="text-xl font-bold text-gray-800 mb-6 text-center">
               Chọn cột để tạo QR Code
@@ -751,7 +997,21 @@ const QRCodeGenerator = () => {
               
               <button
                 onClick={generateQRCodes}
-                disabled={!selectedContentColumn || (showText && !selectedTextColumn) || selectedFileNameColumns.length === 0 || isGenerating}
+                disabled={(() => {
+                  if (!selectedContentColumn) return true;
+                  if (showText && !selectedTextColumn) return true;
+                  if (selectedFileNameColumns.length === 0) return true;
+                  if (isGenerating) return true;
+                  if (generateBySheet) {
+                    if (!workbook) return true;
+                    if (selectedSheets.length === 0) return true;
+                    const first = workbook.SheetNames[0];
+                    const base = sheetHeaders[first] || [];
+                    const mismatches = selectedSheets.filter(name => !arraysEqual(base, (sheetHeaders[name] || [])));
+                    if (mismatches.length > 0) return true;
+                  }
+                  return false;
+                })()}
                 className="btn-primary flex items-center"
               >
                 <Download className="w-4 h-4 mr-2" />
