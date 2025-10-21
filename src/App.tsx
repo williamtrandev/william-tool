@@ -10,7 +10,7 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [threshold, setThreshold] = useState(2); // Default threshold is 2
+  const [threshold, setThreshold] = useState(1); // Default threshold is 1
   const [activeTab, setActiveTab] = useState<'grouping' | 'mapping' | 'qrcode' | 'splitter'>('mapping');
   
   // New state for column statistics
@@ -357,12 +357,12 @@ function App() {
             <input
               type="number"
               id="threshold"
-              min="2"
+              min="1"
               value={threshold}
               onBlur={(e) => {
                 const value = e.target.value;
-                if (value === '' || parseInt(value) < 2) {
-                  setThreshold(2);
+                if (value === '' || parseInt(value) < 1) {
+                  setThreshold(1);
                 } else {
                   setThreshold(parseInt(value));
                 }
@@ -370,7 +370,7 @@ function App() {
               onChange={(e) => {
                 const value = e.target.value;
                 if (value === '') {
-                  setThreshold(2);
+                  setThreshold(1);
                 } else {
                   const num = parseInt(value);
                   if (!isNaN(num)) {
