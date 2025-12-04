@@ -1399,6 +1399,75 @@ const ExcelMapper = () => {
               </p>
             </div>
           </div>
+
+          {/* Template mẫu */}
+          <div className="mt-6 p-4 bg-white rounded-lg border border-dashed border-blue-200">
+            <h4 className="font-semibold text-gray-800 mb-3">📋 Template mẫu cho Excel Data Mapper</h4>
+            <div className="space-y-4 text-sm text-gray-700">
+              <div>
+                <p className="font-semibold mb-1">1. File dữ liệu gốc (Source)</p>
+                <p className="text-gray-600 mb-1">Ví dụ sheet dữ liệu gốc (có cột trùng tên sheet mapping):</p>
+                <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto">
+{`bib  | province_code | other_col
+1001 | SG             | ...
+1002 | HN_Old         | ...
+1003 | DN_Old         | ...`}
+                </pre>
+                <p className="mt-1 text-gray-600">
+                  - Đây là file dữ liệu gốc, trong đó cột <code>province_code</code> đang dùng mã/tên cũ (SG, HN_Old, DN_Old...).<br />
+                  - Bạn muốn chuẩn hóa lại thành mã tỉnh thống nhất (HCM, HN, DN) rồi sau đó có thể map tiếp ra tên đầy đủ.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">2. File mapping cơ bản (lần 1: từ dữ liệu cũ → mã chuẩn)</p>
+                <p className="text-gray-600 mb-1">
+                  Ví dụ file mapping lần 1 có sheet <strong>"province_code"</strong>, dùng để đổi từ mã/tên cũ sang mã tỉnh chuẩn (tên sheet trùng với tên cột <code>province_code</code>):
+                </p>
+                <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto mb-2">
+{`Sheet "province_code":
+value       | key
+SG          | HCM
+HN_Old      | HN
+DN_Old      | DN`}
+                </pre>
+                <p className="mt-1 text-gray-600">
+                  - Cột <strong>value</strong> là giá trị đang có trong file gốc (<code>province_code</code>).<br />
+                  - Cột <strong>key</strong> là mã chuẩn mà bạn muốn dùng về sau (<code>HCM</code>, <code>HN</code>, <code>DN</code>).<br />
+                  - Sau khi xử lý lần 1, bạn sẽ có thêm cột mới (ví dụ <code>province_code</code>) chứa mã chuẩn, dùng làm input cho bước 3 (mapping bổ sung).
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">3. Mapping bổ sung (sau khi đã map lần 1)</p>
+                <p className="text-gray-600 mb-1">
+                  Sau khi bạn đã chạy <strong>mapping chính</strong> (value → key) và có thêm các cột đã xử lý, bạn có thể dùng <strong>mapping bổ sung</strong> để map tiếp từ <em>cột đã map</em> sang giá trị chi tiết hơn. Ví dụ có một sheet <strong>province_mapping</strong>:
+                </p>
+                <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto mb-2">
+{`Sheet "province_mapping":
+value   | key
+HCM     | Hồ Chí Minh
+HN      | Hà Nội
+DN      | Đà Nẵng`}
+                </pre>
+                <p className="mt-1 text-gray-600">
+                  - Lần 1 bạn map cột <code>province_code</code> ở file mapping → <code>province_code</code> (ra mã HCM, HN, DN...) ở file gốc.<br />
+                  - Bạn muốn thêm cột tên tỉnh đầy đủ → tạo sheet <code>province_mapping</code> như trên (value = mã, key = tên mới) chung với file mapping luôn và thực hiện như 2 bước đầu.<br />
+                  - Sau đó, ở bước mapping bổ sung trong tool: chọn sheet <code>province_mapping</code>, chọn cột nguồn là <strong>cột đã map</strong> (ví dụ <code>province_code</code>, không phải cột gốc ban đầu).<br />
+                  - Kết quả: tool sẽ tạo thêm <strong>một cột mới</strong> (theo tên sheet mapping) chứa "Hồ Chí Minh", "Hà Nội", "Đà Nẵng" dựa trên mã sau khi đã map lần 1.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">4. Gợi ý chuẩn bị file</p>
+                <ul className="list-disc list-inside text-gray-600 space-y-1">
+                  <li>File mapping: mỗi sheet 2 cột <strong>value</strong> và <strong>key</strong>, không để trống header.</li>
+                  <li>Giá trị ở cột <strong>value</strong> phải trùng đúng với dữ liệu trong file gốc (kể cả khoảng trắng, hoa/thường).</li>
+                  <li>Có thể xử lý dần: chạy 1 lần, xem sheet thống kê, bổ sung thêm các giá trị chưa map rồi chạy lại.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -343,6 +343,52 @@ const SheetSplitter = () => {
               <li>• Tên file sẽ được tự động làm sạch để tránh ký tự không hợp lệ</li>
             </ul>
           </div>
+
+          {/* Template mẫu */}
+          <div className="mt-6 p-4 bg-white rounded-lg border border-dashed border-blue-200">
+            <h4 className="font-semibold text-gray-800 mb-3">📋 Template mẫu cho Sheet Splitter</h4>
+            <div className="space-y-4 text-sm text-gray-700">
+              <div>
+                <p className="font-semibold mb-1">1. File Excel nhiều sheet</p>
+                <p className="text-gray-600 mb-1">Ví dụ cấu trúc file:</p>
+                <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto">
+{`Sheet "10K":
+BIB  | Name          | Gender
+1001 | Nguyễn Văn A  | M
+1002 | Trần Thị B    | F
+
+Sheet "21K":
+BIB  | Name          | Gender
+2001 | Lê Văn C      | M
+2002 | Phạm Thị D    | F`}
+                </pre>
+                <p className="mt-1 text-gray-600">
+                  - Mỗi sheet là một nhóm dữ liệu (ví dụ: từng cự ly, từng giải, từng ngày...).<br />
+                  - Công cụ sẽ giữ nguyên nội dung từng sheet và tách ra thành các file <code>10K.xlsx</code>, <code>21K.xlsx</code>, ...
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">2. Template dùng cho file báo cáo tổng hợp</p>
+                <p className="text-gray-600 mb-1">
+                  Bạn có thể dùng một file tổng hợp có nhiều sheet (mỗi sheet là một chi nhánh, khu vực, ngày chạy,...) và tách ra nhanh:
+                </p>
+                <p className="text-gray-600">
+                  - Ví dụ các sheet: <code>Branch_A</code>, <code>Branch_B</code>, <code>Branch_C</code>...<br />
+                  - Chỉ cần tick sheet nào cần, bấm tách là có ngay file riêng cho từng branch.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">3. Gợi ý chuẩn bị file</p>
+                <ul className="list-disc list-inside text-gray-600 space-y-1">
+                  <li>Mỗi sheet nên có header ở dòng đầu tiên, không để trống hoàn toàn.</li>
+                  <li>Đặt tên sheet ngắn gọn, không chứa ký tự đặc biệt; công cụ sẽ tự làm sạch lại tên file nếu cần.</li>
+                  <li>Nếu file có rất nhiều sheet, nên dùng nút "Chọn tất cả" rồi bỏ chọn bớt những sheet không cần.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

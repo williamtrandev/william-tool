@@ -505,6 +505,47 @@ function App() {
               <li>• Sheet "Thống kê Count" sẽ chứa: Sheet ID, Cột, Giá trị, Số lượng, Tổng dòng trong sheet</li>
             </ul>
           </div>
+
+          {/* Template mẫu */}
+          <div className="mt-6 p-4 bg-white rounded-lg border border-dashed border-blue-200">
+            <h4 className="font-semibold text-gray-800 mb-3">📋 Template mẫu cho ID Card Grouping</h4>
+            <div className="space-y-4 text-sm text-gray-700">
+              <div>
+                <p className="font-semibold mb-1">1. File dữ liệu có cột "ID Card Pick"</p>
+                <p className="text-gray-600 mb-1">Ví dụ một phần dữ liệu:</p>
+                <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto">
+{`ID Card Pick   | BIB  | Name          | Category
+123456789      | 1001 | Nguyễn Văn A  | 10K
+123456789      | 1002 | Trần Thị B    | 10K
+987654321      | 2001 | Lê Văn C      | 21K
+123456789      | 1003 | Phạm Thị D    | 10K`}
+                </pre>
+                <p className="mt-1 text-gray-600">
+                  - Cột <strong>"ID Card Pick"</strong> là cột dùng để gom nhóm (cùng ID → cùng nhóm).<br />
+                  - Bạn có thể có nhiều cột khác (BIB, Name, Category, ...), công cụ sẽ giữ nguyên toàn bộ.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">2. Thiết lập ngưỡng (threshold)</p>
+                <p className="text-gray-600">
+                  - Ví dụ đặt ngưỡng = <strong>2</strong> ⇒ chỉ những ID Card xuất hiện từ 2 dòng trở lên mới được xuất ra file riêng.<br />
+                  - Với ví dụ trên, ID <code>123456789</code> có 3 dòng sẽ được tạo 1 sheet riêng, ID <code>987654321</code> chỉ 1 dòng nên sẽ bị bỏ qua.
+                </p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <p className="font-semibold mb-1">3. Template gợi ý thêm thống kê theo cột</p>
+                <p className="text-gray-600 mb-1">
+                  Sau khi upload xong, bạn có thể chọn thêm cột để thống kê (ví dụ <strong>Category</strong>):  
+                </p>
+                <p className="text-gray-600">
+                  - Mỗi sheet ID sẽ có thêm bảng nhỏ dạng: <code>Category | Count</code> để bạn xem nhanh mỗi ID có bao nhiêu người ở từng hạng mục.<br />
+                  - Phù hợp để kiểm tra nhanh số lượng theo size áo, đường chạy, nhóm, v.v.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

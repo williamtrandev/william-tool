@@ -1120,18 +1120,107 @@ const QRCodeGenerator = () => {
             </div>
           </div>
           
-          {/* Thông tin bổ sung */}
-          <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200">
-            <h4 className="font-semibold text-gray-800 mb-2">💡 Lưu ý quan trọng:</h4>
-            <ul className="text-sm text-gray-600 space-y-1">
-              <li>• <strong>QR code + Text:</strong> Hiển thị text bên dưới QR code, kích thước 300x350px</li>
-              <li>• <strong>Chỉ QR code:</strong> Không có text, kích thước 300x300px</li>
-              <li>• <strong>Tên file:</strong> Hỗ trợ tiếng Việt, tự động làm sạch ký tự đặc biệt, xử lý trùng tên</li>
-              <li>• <strong>Kết hợp cột:</strong> Có thể chọn nhiều cột để tạo tên file, sử dụng ký tự phân cách tùy chỉnh</li>
-              <li>• <strong>Preview:</strong> Hiển thị 3 QR code đầu tiên để kiểm tra trước khi tạo tất cả</li>
-              <li>• <strong>Xuất file:</strong> Format PNG chất lượng cao, tự động wrap text dài, xuất ZIP</li>
-            </ul>
+        {/* Thông tin bổ sung */}
+        <div className="mt-6 p-4 bg-white rounded-lg border border-gray-200">
+          <h4 className="font-semibold text-gray-800 mb-2">💡 Lưu ý quan trọng:</h4>
+          <ul className="text-sm text-gray-600 space-y-1">
+            <li>• <strong>QR code + Text:</strong> Hiển thị text bên dưới QR code, kích thước 300x350px</li>
+            <li>• <strong>Chỉ QR code:</strong> Không có text, kích thước 300x300px</li>
+            <li>• <strong>Tên file:</strong> Hỗ trợ tiếng Việt, tự động làm sạch ký tự đặc biệt, xử lý trùng tên</li>
+            <li>• <strong>Kết hợp cột:</strong> Có thể chọn nhiều cột để tạo tên file, sử dụng ký tự phân cách tùy chỉnh</li>
+            <li>• <strong>Preview:</strong> Hiển thị 3 QR code đầu tiên để kiểm tra trước khi tạo tất cả</li>
+            <li>• <strong>Xuất file:</strong> Format PNG chất lượng cao, tự động wrap text dài, xuất ZIP</li>
+          </ul>
+        </div>
+        
+        {/* Template mẫu cho từng tính năng */}
+        <div className="mt-6 p-4 bg-white rounded-lg border border-dashed border-blue-200">
+          <h4 className="font-semibold text-gray-800 mb-3">📋 Template mẫu (tham khảo nhanh)</h4>
+          <div className="space-y-4 text-sm text-gray-700">
+            <div>
+              <p className="font-semibold mb-1">1. Template cơ bản (1 sheet, QR + Text + tên file)</p>
+              <p className="text-gray-600 mb-1">File Excel chỉ cần 1 sheet với các cột ví dụ như sau:</p>
+              <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto">
+{`Nội dung QR     | Text hiển thị | Họ tên       | Mã nhân viên
+https://abc.com | NV001         | Nguyễn Văn A | 001
+https://xyz.com | NV002         | Trần Thị B   | 002`}
+              </pre>
+              <p className="mt-1 text-gray-600">
+                - <strong>Cột nội dung QR:</strong> chọn cột <strong>"Nội dung QR"</strong>.<br />
+                - <strong>Cột text:</strong> chọn cột <strong>"Text hiển thị"</strong> (hoặc có thể là "Họ tên").<br />
+                - <strong>Cột đặt tên file:</strong> chọn 2 cột <strong>"Họ tên"</strong> và <strong>"Mã nhân viên"</strong>, ký tự phân cách là <code>_</code>.<br />
+                - Tên file tạo ra sẽ giống: <code>Nguyễn Văn A_001.png</code>, <code>Trần Thị B_002.png</code>.
+              </p>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <p className="font-semibold mb-1">2. Template cho nhiều sheet (tạo folder theo sheet)</p>
+              <p className="text-gray-600 mb-1">
+                Mỗi sheet là 1 nhóm QR riêng, nhưng <strong>tất cả sheet phải có cùng header</strong>. Ví dụ:
+              </p>
+              <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto mb-1">
+{`Sheet "Chi nhánh A":
+Nội dung QR | Họ tên       | Mã NV
+https://a1  | Nguyễn Văn A | A001
+https://a2  | Trần Thị B   | A002
+
+Sheet "Chi nhánh B":
+Nội dung QR | Họ tên       | Mã NV
+https://b1  | Lê Văn C     | B001
+https://b2  | Phạm Thị D   | B002`}
+              </pre>
+              <p className="mt-1 text-gray-600">
+                - Khi chọn cả 2 sheet, file ZIP sẽ có 2 folder: <code>Chi nhánh A</code> và <code>Chi nhánh B</code>.<br />
+                - Bên trong mỗi folder là QR code tương ứng với từng dòng trong sheet đó.
+              </p>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <p className="font-semibold mb-1">3. Template chỉ QR (không có text)</p>
+              <p className="text-gray-600 mb-1">
+                Chọn tùy chọn <strong>"Chỉ QR code"</strong>, file chỉ cần 2 cột: nội dung QR và cột để đặt tên file:
+              </p>
+              <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto mb-1">
+{`Nội dung QR     | Mã vé
+https://ticket1 | VE001
+https://ticket2 | VE002`}
+              </pre>
+              <p className="mt-1 text-gray-600">
+                - <strong>Cột nội dung QR:</strong> chọn <strong>"Nội dung QR"</strong>.<br />
+                - <strong>Cột đặt tên file:</strong> chọn <strong>"Mã vé"</strong>.<br />
+                - Kết quả: QR code không có text, tên file lần lượt là <code>VE001.png</code>, <code>VE002.png</code>.
+              </p>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <p className="font-semibold mb-1">4. Template đặt tên file bằng nhiều cột</p>
+              <p className="text-gray-600 mb-1">
+                Dùng nhiều cột để tạo tên file rõ ràng hơn (ví dụ: họ tên + lớp + mã số):
+              </p>
+              <pre className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs overflow-x-auto mb-1">
+{`Nội dung QR   | Họ tên         | Lớp  | Mã số
+https://s1    | Nguyễn Văn A   | 10A1 | 001
+https://s2    | Trần Thị B     | 10A2 | 002`}
+              </pre>
+              <p className="mt-1 text-gray-600">
+                - Chọn cột nội dung QR là <strong>"Nội dung QR"</strong>.<br />
+                - Chọn cột đặt tên file: <strong>"Họ tên"</strong>, <strong>"Lớp"</strong>, <strong>"Mã số"</strong> theo đúng thứ tự.<br />
+                - Ký tự phân cách: có thể để <code>_</code> hoặc <code>-</code> theo ý bạn.<br />
+                - Tên file ví dụ: <code>Nguyễn Văn A_10A1_001.png</code>, <code>Trần Thị B_10A2_002.png</code>.
+              </p>
+            </div>
+
+            <div className="border-t border-gray-200 pt-3">
+              <p className="font-semibold mb-1">5. Gợi ý chung khi chuẩn bị file Excel</p>
+              <ul className="list-disc list-inside text-gray-600 space-y-1">
+                <li>Không để trống dòng đầu tiên – dòng đầu tiên phải là <strong>tên cột (header)</strong>.</li>
+                <li>Không nên có cột trống giữa chừng; nếu không dùng thì xóa luôn cột đó.</li>
+                <li>Hạn chế dùng ký tự đặc biệt trong các cột dùng làm tên file (sẽ được tự động làm sạch nhưng nên gọn gàng ngay từ đầu).</li>
+                <li>Nên thử trước với 3–5 dòng dữ liệu, xem preview ổn rồi hãy dùng file lớn.</li>
+              </ul>
+            </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
